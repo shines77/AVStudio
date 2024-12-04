@@ -221,6 +221,7 @@
     <ClInclude Include="..\..\..\src\AVStreaming\stdafx.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\targetver.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\DShowCapture.h" />
+    <ClInclude Include="..\..\..\src\AVStreaming\utils.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\..\src\AVStreaming\AVStreaming.cpp" />
@@ -233,6 +234,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="..\..\..\src\AVStreaming\DShowCapture.cpp" />
+    <ClCompile Include="..\..\..\src\AVStreaming\utils.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\..\..\src\AVStreaming\AVStreaming.rc" />

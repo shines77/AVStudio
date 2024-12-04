@@ -1,7 +1,8 @@
-
+//
 // stdafx.h : 标准系统包含文件的包含文件，
 // 或是经常使用但不常更改的
 // 特定于项目的包含文件
+//
 
 #pragma once
 
@@ -30,7 +31,6 @@
 
 #include <afxcontrolbars.h>     // 功能区和控件条的 MFC 支持
 
-
 #ifdef _UNICODE
 #if defined _M_IX86
 #pragma comment(linker,"/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='x86' publicKeyToken='6595b64144ccf1df' language='*'\"")
@@ -41,15 +41,15 @@
 #endif
 #endif
 
-#ifndef SAFE_INTERFACE_RELEASE
-#define SAFE_INTERFACE_RELEASE(pInterface) \
+#ifndef SAFE_COM_RELEASE
+#define SAFE_COM_RELEASE(pInterface) \
     do {                            \
         if (pInterface != NULL) {   \
             pInterface->Release();  \
             pInterface = NULL;      \
         }                           \
     } while (0)
-#endif // SAFE_INTERFACE_RELEASE
+#endif // SAFE_COM_RELEASE
 
 #ifndef SAFE_OBJECT_DELETE
 #define SAFE_OBJECT_DELETE(pObject) \
@@ -59,25 +59,4 @@
             pObject = NULL;         \
         }                           \
     } while (0)
-#endif // SAFE_OBJECT_RELEASE
-
-#include <string>
-
-#ifdef _UNICODE
-namespace std {
-    using tstring = wstring;
-}
-#else
-namespace std {
-    using tstring = string;
-}
-}
-#endif // _UNICODE
-
-#ifdef _UNICODE
-std::wstring Ansi2Unicode(const std::string & ansiStr);
-std::string Unicode2Ansi(const std::wstring & unicodeStr);
-#else
-std::string Ansi2Unicode(const std::string & str)
-std::string Unicode2Ansi(const std::string & str);
-#endif // _UNICODE
+#endif // SAFE_OBJECT_DELETE

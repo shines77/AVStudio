@@ -5,7 +5,7 @@
 #pragma once
 
 #include "DShowCapture.h"
-#include "afxwin.h"
+#include <afxwin.h>
 
 // CAVStreamingDlg ¶Ô»°¿ò
 class CAVStreamingDlg : public CDialogEx
@@ -33,15 +33,16 @@ protected:
 	afx_msg void OnPaint();
 	afx_msg HCURSOR OnQueryDragIcon();
     afx_msg void OnCbnSelChangeVideoDeviceList();
+    afx_msg void OnCbnSelChangeAudioDeviceList();
 	DECLARE_MESSAGE_MAP()
 
     int EnumVideoDeviceList();
     int EnumAudioDeviceList();
 
 private:
-    DShowCapture * camera_;
+    DShowCapture * dShowCapture_;
 
-    CStatic     m_wndCameraPreview;
-    CComboBox   m_cbxVideoDeviceList;
-    CComboBox   m_cbxAudioDeviceList;
+    CStatic     wndCameraPreview_;
+    CComboBox   cbxVideoDeviceList_;
+    CComboBox   cbxAudioDeviceList_;
 };

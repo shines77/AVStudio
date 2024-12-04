@@ -36,6 +36,7 @@ struct CamVideoConfig
     SIZE MaxOutputSize;
     double MinFPS;
     double MaxFPS;
+    ULONG lSampleSize;
     ULONG cbFormat;
 	int FormatIndex;
  
@@ -48,6 +49,7 @@ struct CamVideoConfig
         MaxOutputSize.cy = 0;
         MinFPS = 0.0;
         MaxFPS = 0.0;
+        lSampleSize = 0;
         cbFormat = -1;
 		FormatIndex = -1;
 	}
@@ -62,6 +64,40 @@ struct CamVideoConfig
         MaxOutputSize = other.MaxOutputSize;
         MinFPS = other.MinFPS;
         MaxFPS = other.MaxFPS;
+        lSampleSize = other.lSampleSize;
+        cbFormat = other.cbFormat;
+		FormatIndex = other.FormatIndex;
+		return *this;
+	}
+};
+
+struct CamAudioConfig
+{
+    ULONG Channels;
+    ULONG BitsPerSample;
+	ULONG SampleFrequency;
+    ULONG lSampleSize;
+    ULONG cbFormat;
+	int FormatIndex;
+ 
+	CamAudioConfig() {
+		Channels = 0;
+        BitsPerSample = 0;
+        SampleFrequency = 0;
+        lSampleSize = 0;
+        cbFormat = -1;
+		FormatIndex = -1;
+	}
+
+	CamAudioConfig(const CamAudioConfig & other) {
+		*this = other;
+	}
+
+	CamAudioConfig & operator = (const CamAudioConfig & other) {
+		Channels = other.Channels;
+		BitsPerSample = other.BitsPerSample;
+        SampleFrequency = other.SampleFrequency;
+        lSampleSize = other.lSampleSize;
         cbFormat = other.cbFormat;
 		FormatIndex = other.FormatIndex;
 		return *this;
@@ -78,7 +114,8 @@ public:
     std::vector<std::string> audioDeviceList_;
 
     std::vector<CamVideoConfig> videoConfigures_;
-    std::vector<int>               videoFPSList_;
+    std::vector<CamAudioConfig> audioConfigures_;
+    std::vector<int>            videoFPSList_;
 
     static const int kFrameIntervalPerSecond = 10000000;
 
@@ -88,6 +125,7 @@ public:
     bool AttachToVideoWindow(HWND hwndPreview);
 
     int ListVideoConfigures();
+    int ListAudioConfigures();
 
     // 枚举视频采集设备, 返回设备数量
     int ListVideoDevices();
@@ -103,6 +141,8 @@ public:
 
     // 根据选择的设备创建 Video Capture Filter
     bool CreateVideoFilter(const char * selectedDevice = NULL);
+    // 根据选择的设备创建 Audio Capture Filter
+    bool CreateAudioFilter(const char * selectedDevice = NULL);
 
     // 渲染预览窗口
     bool Render(int mode, TCHAR * videoPath = NULL,
@@ -123,6 +163,7 @@ private:
     IGraphBuilder *         pFilterGraph_;          // filter graph (Manager)
     ICaptureGraphBuilder2 * pCaptureBuilder_;       // capture graph (Builder)
     IBaseFilter *           pVideoFilter_;          // Video filter
+    IBaseFilter *           pAudioFilter_;          // Audio filter
     IBaseFilter *           pVideoMux_;             // Video file muxer (用于保存视频文件)
     IVideoWindow *          pVideoWindow_;          // 视频播放窗口
     IMediaControl *         pVideoMediaControl_;    // 摄像头流媒体的控制开关（控制其开始、暂停、结束）

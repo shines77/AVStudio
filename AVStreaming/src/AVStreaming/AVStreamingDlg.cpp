@@ -5,7 +5,10 @@
 #include "stdafx.h"
 #include "AVStreaming.h"
 #include "AVStreamingDlg.h"
+
 #include <AfxDialogEx.h>
+
+#include "utils.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -52,12 +55,12 @@ CAVStreamingDlg::CAVStreamingDlg(CWnd* pParent /* = NULL */)
 
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
 
-    camera_ = NULL;
+    dShowCapture_ = NULL;
 }
 
 CAVStreamingDlg::~CAVStreamingDlg()
 {
-    SAFE_OBJECT_DELETE(camera_);
+    SAFE_OBJECT_DELETE(dShowCapture_);
 
     CoUninitialize();
 }
@@ -65,9 +68,9 @@ CAVStreamingDlg::~CAVStreamingDlg()
 void CAVStreamingDlg::DoDataExchange(CDataExchange* pDX)
 {
     CDialogEx::DoDataExchange(pDX);
-    DDX_Control(pDX, IDC_CAMERA_PREVIEW, m_wndCameraPreview);
-    DDX_Control(pDX, IDC_VIDEO_DEVICE_LIST, m_cbxVideoDeviceList);
-    DDX_Control(pDX, IDC_AUDIO_DEVICE_LIST, m_cbxAudioDeviceList);
+    DDX_Control(pDX, IDC_CAMERA_PREVIEW, wndCameraPreview_);
+    DDX_Control(pDX, IDC_VIDEO_DEVICE_LIST, cbxVideoDeviceList_);
+    DDX_Control(pDX, IDC_AUDIO_DEVICE_LIST, cbxAudioDeviceList_);
 }
 
 BEGIN_MESSAGE_MAP(CAVStreamingDlg, CDialogEx)
@@ -75,6 +78,7 @@ BEGIN_MESSAGE_MAP(CAVStreamingDlg, CDialogEx)
 	ON_WM_PAINT()
 	ON_WM_QUERYDRAGICON()
     ON_CBN_SELCHANGE(IDC_VIDEO_DEVICE_LIST, &CAVStreamingDlg::OnCbnSelChangeVideoDeviceList)
+    ON_CBN_SELCHANGE(IDC_AUDIO_DEVICE_LIST, &CAVStreamingDlg::OnCbnSelChangeAudioDeviceList)
 END_MESSAGE_MAP()
 
 // CAVStreamingDlg 消息处理程序
@@ -108,16 +112,17 @@ BOOL CAVStreamingDlg::OnInitDialog()
 	SetIcon(m_hIcon, TRUE);			// 设置大图标
 	SetIcon(m_hIcon, FALSE);		// 设置小图标
 
-	if (camera_ == NULL) {
-        camera_ = new DShowCapture;
-        if (camera_ != NULL) {
-            camera_->Init();
-            camera_->SetPreviewHwnd(m_wndCameraPreview.GetSafeHwnd());
+	if (dShowCapture_ == NULL) {
+        dShowCapture_ = new DShowCapture;
+        if (dShowCapture_ != NULL) {
+            dShowCapture_->Init();
+            dShowCapture_->SetPreviewHwnd(wndCameraPreview_.GetSafeHwnd());
 
             EnumVideoDeviceList();
             EnumAudioDeviceList();
 
-            camera_->ListVideoConfigures();
+            dShowCapture_->ListVideoConfigures();
+            dShowCapture_->ListAudioConfigures();
         }
     }
 
@@ -130,26 +135,26 @@ int CAVStreamingDlg::EnumVideoDeviceList()
     int default_selected = -1;
     std::string selected_device;
 
-    if (camera_ != NULL) {
-        nDeviceCount = camera_->ListVideoDevices();
+    if (dShowCapture_ != NULL) {
+        nDeviceCount = dShowCapture_->ListVideoDevices();
         if (nDeviceCount > 0) {
-            m_cbxVideoDeviceList.Clear();
+            cbxVideoDeviceList_.Clear();
         }
         for (int i = 0; i < nDeviceCount; i++) {
-            const std::string & deviceName = camera_->videoDeviceList_[i];
+            const std::string & deviceName = dShowCapture_->videoDeviceList_[i];
             std::tstring deviceNameW = Ansi2Unicode(deviceName);
             if (deviceName == "HD WebCam") {
                 default_selected = i;
                 selected_device = deviceName;
             }               
-            m_cbxVideoDeviceList.AddString(deviceNameW.c_str());
+            cbxVideoDeviceList_.AddString(deviceNameW.c_str());
         }
     }
 
     if (default_selected == -1)
         default_selected = 0;
 
-    m_cbxVideoDeviceList.SetCurSel(default_selected);
+    cbxVideoDeviceList_.SetCurSel(default_selected);
     OnCbnSelChangeVideoDeviceList();
 
     return nDeviceCount;
@@ -157,7 +162,28 @@ int CAVStreamingDlg::EnumVideoDeviceList()
 
 int CAVStreamingDlg::EnumAudioDeviceList()
 {
-    return -1;
+    int nDeviceCount = 0;
+    int default_selected = -1;
+
+    if (dShowCapture_ != NULL) {
+        nDeviceCount = dShowCapture_->ListAudioDevices();
+        if (nDeviceCount > 0) {
+            cbxAudioDeviceList_.Clear();
+        }
+        for (int i = 0; i < nDeviceCount; i++) {
+            const std::string & deviceName = dShowCapture_->audioDeviceList_[i];
+            std::tstring deviceNameW = Ansi2Unicode(deviceName);             
+            cbxAudioDeviceList_.AddString(deviceNameW.c_str());
+        }
+    }
+
+    if (default_selected == -1)
+        default_selected = 0;
+
+    cbxAudioDeviceList_.SetCurSel(default_selected);
+    OnCbnSelChangeAudioDeviceList();
+
+    return nDeviceCount;
 }
 
 void CAVStreamingDlg::OnSysCommand(UINT nID, LPARAM lParam)
@@ -210,19 +236,38 @@ HCURSOR CAVStreamingDlg::OnQueryDragIcon()
 
 void CAVStreamingDlg::OnCbnSelChangeVideoDeviceList()
 {
-    int selected_idx = m_cbxVideoDeviceList.GetCurSel();
+    int selected_idx = cbxVideoDeviceList_.GetCurSel();
     if (selected_idx < 0)
         return;
 
     CString name;
-    m_cbxVideoDeviceList.GetWindowText(name);
+    cbxVideoDeviceList_.GetWindowText(name);
     std::tstring deviceNameW = name.GetBuffer();
     if (deviceNameW.empty()) {
         return;
     }
     std::string selectedDevice = Unicode2Ansi(deviceNameW);
 
-    if (camera_ != NULL) {
-        bool result = camera_->Render(UVC_PREVIEW_VIDEO, NULL, selectedDevice.c_str());
+    if (dShowCapture_ != NULL) {
+        bool result = dShowCapture_->Render(UVC_PREVIEW_VIDEO, NULL, selectedDevice.c_str());
+    }
+}
+
+void CAVStreamingDlg::OnCbnSelChangeAudioDeviceList()
+{
+    int selected_idx = cbxAudioDeviceList_.GetCurSel();
+    if (selected_idx < 0)
+        return;
+
+    CString name;
+    cbxAudioDeviceList_.GetWindowText(name);
+    std::tstring deviceNameW = name.GetBuffer();
+    if (deviceNameW.empty()) {
+        return;
+    }
+
+    std::string selectedDevice = Unicode2Ansi(deviceNameW);
+    if (dShowCapture_ != NULL) {
+        bool result = dShowCapture_->CreateAudioFilter(selectedDevice.c_str());
     }
 }
