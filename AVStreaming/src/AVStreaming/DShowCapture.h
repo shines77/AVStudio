@@ -29,6 +29,9 @@
 #define UVC_STOP_RECORD         2
 #define UVC_STOP_LOCAL_VIDEO    3
 
+// Application-defined message to notify app of filtergraph events
+#define WM_GRAPH_NOTIFY         (WM_APP + 1)
+
 struct CamVideoConfig
 {
 	SIZE InputSize;
@@ -119,9 +122,24 @@ public:
 
     static const int kFrameIntervalPerSecond = 10000000;
 
-    HRESULT Init();
+    enum PLAY_STATE {
+        Unknown = -1,
+        Stopped,
+        Running,
+        Paused
+    };
 
+    HRESULT CreateInterfaces();
+    HRESULT CloseAndReleaseInterfaces();
+
+    HWND GetPreviewHwnd() const {
+        return hwndPreview_;
+    }
     HWND SetPreviewHwnd(HWND hwndPreview, bool bAttachTo = false);
+
+    HRESULT ChangePreviewState(PLAY_STATE playState = PLAY_STATE::Running);
+
+    void ResizeVideoWindow(HWND hwndPreview = NULL);
     bool AttachToVideoWindow(HWND hwndPreview);
 
     int ListVideoConfigures();
@@ -157,8 +175,13 @@ public:
     // 继续播放本地视频
     bool ContinuePlayingLocalVideo();
 
+protected:
+    void InitInterfaces();
+    void ReleaseInterfaces();
+
 private:
     HWND                    hwndPreview_;           // 预览窗口句柄
+    PLAY_STATE              playState_;             // 播放状态
 
     IGraphBuilder *         pFilterGraph_;          // filter graph (Manager)
     ICaptureGraphBuilder2 * pCaptureBuilder_;       // capture graph (Builder)
@@ -167,5 +190,5 @@ private:
     IBaseFilter *           pVideoMux_;             // Video file muxer (用于保存视频文件)
     IVideoWindow *          pVideoWindow_;          // 视频播放窗口
     IMediaControl *         pVideoMediaControl_;    // 摄像头流媒体的控制开关（控制其开始、暂停、结束）
-    IMediaEvent *           pVideoMediaEvent_;      // 摄像头流媒体的控制事件
+    IMediaEventEx *         pVideoMediaEvent_;      // 摄像头流媒体的控制事件
 };

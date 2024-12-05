@@ -6,8 +6,6 @@
 #include "AVStreaming.h"
 #include "AVStreamingDlg.h"
 
-#include <AfxDialogEx.h>
-
 #include "utils.h"
 
 #ifdef _DEBUG
@@ -48,40 +46,64 @@ END_MESSAGE_MAP()
 
 // CAVStreamingDlg 对话框
 
+IMPLEMENT_DYNAMIC(CAVStreamingDlg, CDialogEx)
+
 CAVStreamingDlg::CAVStreamingDlg(CWnd* pParent /* = NULL */)
 	: CDialogEx(IDD_AVSTREAMING_DIALOG, pParent)
 {
-    CoInitialize(NULL);   // 初始化 COM 库
-
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
 
-    dShowCapture_ = NULL;
+    pCameraSettingDlg_ = NULL;
+    pPreviewWnd_ = NULL;
 }
 
 CAVStreamingDlg::~CAVStreamingDlg()
 {
-    SAFE_OBJECT_DELETE(dShowCapture_);
-
-    CoUninitialize();
+    SAFE_OBJECT_DELETE(pCameraSettingDlg_);
+    SAFE_OBJECT_DELETE(pPreviewWnd_);
 }
 
 void CAVStreamingDlg::DoDataExchange(CDataExchange* pDX)
 {
     CDialogEx::DoDataExchange(pDX);
-    DDX_Control(pDX, IDC_CAMERA_PREVIEW, wndCameraPreview_);
-    DDX_Control(pDX, IDC_VIDEO_DEVICE_LIST, cbxVideoDeviceList_);
-    DDX_Control(pDX, IDC_AUDIO_DEVICE_LIST, cbxAudioDeviceList_);
 }
 
 BEGIN_MESSAGE_MAP(CAVStreamingDlg, CDialogEx)
 	ON_WM_SYSCOMMAND()
 	ON_WM_PAINT()
 	ON_WM_QUERYDRAGICON()
-    ON_CBN_SELCHANGE(IDC_VIDEO_DEVICE_LIST, &CAVStreamingDlg::OnCbnSelChangeVideoDeviceList)
-    ON_CBN_SELCHANGE(IDC_AUDIO_DEVICE_LIST, &CAVStreamingDlg::OnCbnSelChangeAudioDeviceList)
 END_MESSAGE_MAP()
 
 // CAVStreamingDlg 消息处理程序
+
+void CAVStreamingDlg::SetScale(double scaleX, double scaleY)
+{
+    // 获取对话框的窗口矩形
+    CRect rect;
+    GetWindowRect(&rect);
+
+    // 缩放对话框的大小
+    rect.right = rect.left + (int)(rect.Width() * scaleX);
+    rect.bottom = rect.top + (int)(rect.Height() * scaleY);
+    MoveWindow(&rect);
+
+    // 缩放对话框中的控件
+    CWnd * pWnd = GetWindow(GW_CHILD);
+    while (pWnd != NULL) {
+        CRect controlRect;
+        pWnd->GetWindowRect(&controlRect);
+        ScreenToClient(&controlRect);
+
+        controlRect.left = (int)(controlRect.left * scaleX);
+        controlRect.top = (int)(controlRect.top * scaleY);
+        controlRect.right = (int)(controlRect.right * scaleX);
+        controlRect.bottom = (int)(controlRect.bottom * scaleY);
+
+        pWnd->MoveWindow(&controlRect);
+
+        pWnd = pWnd->GetNextWindow();
+    }
+}
 
 BOOL CAVStreamingDlg::OnInitDialog()
 {
@@ -92,6 +114,16 @@ BOOL CAVStreamingDlg::OnInitDialog()
 	// IDM_ABOUTBOX 必须在系统命令范围内。
 	ASSERT((IDM_ABOUTBOX & 0xFFF0) == IDM_ABOUTBOX);
 	ASSERT(IDM_ABOUTBOX < 0xF000);
+
+    // 获取屏幕的 DPI
+    HDC hdc = ::GetDC(NULL);
+    int dpiX = GetDeviceCaps(hdc, LOGPIXELSX);
+    int dpiY = GetDeviceCaps(hdc, LOGPIXELSY);
+    ::ReleaseDC(NULL, hdc);
+
+    // 计算缩放比例
+    double scaleX = (double)dpiX / 96.0;
+    double scaleY = (double)dpiY / 96.0;
 
 	CMenu* pSysMenu = GetSystemMenu(FALSE);
 	if (pSysMenu != NULL)
@@ -112,78 +144,41 @@ BOOL CAVStreamingDlg::OnInitDialog()
 	SetIcon(m_hIcon, TRUE);			// 设置大图标
 	SetIcon(m_hIcon, FALSE);		// 设置小图标
 
-	if (dShowCapture_ == NULL) {
-        dShowCapture_ = new DShowCapture;
-        if (dShowCapture_ != NULL) {
-            dShowCapture_->Init();
-            dShowCapture_->SetPreviewHwnd(wndCameraPreview_.GetSafeHwnd());
+    if (pPreviewWnd_ == NULL) {
+        CRect rcWnd(10, 10, 10 + kDefaultVideoPreviewWidth, 10 + kDefaultVideoPreviewHeight);
+        pPreviewWnd_ = new CPreviewWnd;
+        pPreviewWnd_->Create(_T("摄像头预览窗口"),
+                             WS_CHILD | WS_CLIPCHILDREN, rcWnd,
+                             this, IDC_CAMERA_PREVIEW);
+        pPreviewWnd_->ShowWindow(SW_SHOWNORMAL);
 
-            EnumVideoDeviceList();
-            EnumAudioDeviceList();
+        CRect rcClient;
+        pPreviewWnd_->GetClientRect(rcClient);
 
-            dShowCapture_->ListVideoConfigures();
-            dShowCapture_->ListAudioConfigures();
-        }
+        CString text;
+        text.Format(_T("r: %ul, l: %ul, width: %d, height: %d\n"), rcClient.left, rcClient.left, rcClient.Width(), rcClient.Height());
+        ::OutputDebugString(text.GetBuffer());
     }
+
+    if (pCameraSettingDlg_ == NULL) {
+        pCameraSettingDlg_ = new CCameraSettingDlg;
+        if (pPreviewWnd_ != NULL && pPreviewWnd_->GetSafeHwnd())
+            pCameraSettingDlg_->Create(IDD_CAMERA_SETTING_DLG, pPreviewWnd_->GetSafeHwnd(), this);
+        else
+            pCameraSettingDlg_->Create(IDD_CAMERA_SETTING_DLG, NULL, this);
+        
+        pCameraSettingDlg_->ShowWindow(SW_SHOWNORMAL);
+
+        CRect rcClient;
+        pCameraSettingDlg_->GetClientRect(rcClient);
+        pCameraSettingDlg_->MoveWindow(10 + kDefaultVideoPreviewWidth + 10, 10,
+                                       rcClient.Width(), rcClient.Height(), TRUE);
+    }
+
+    // 设置对话框的缩放比例
+    SetScale(scaleX, scaleY);
 
 	return TRUE;  // 除非将焦点设置到控件，否则返回 TRUE
-}
-
-int CAVStreamingDlg::EnumVideoDeviceList()
-{
-    int nDeviceCount = 0;
-    int default_selected = -1;
-    std::string selected_device;
-
-    if (dShowCapture_ != NULL) {
-        nDeviceCount = dShowCapture_->ListVideoDevices();
-        if (nDeviceCount > 0) {
-            cbxVideoDeviceList_.Clear();
-        }
-        for (int i = 0; i < nDeviceCount; i++) {
-            const std::string & deviceName = dShowCapture_->videoDeviceList_[i];
-            std::tstring deviceNameW = Ansi2Unicode(deviceName);
-            if (deviceName == "HD WebCam") {
-                default_selected = i;
-                selected_device = deviceName;
-            }               
-            cbxVideoDeviceList_.AddString(deviceNameW.c_str());
-        }
-    }
-
-    if (default_selected == -1)
-        default_selected = 0;
-
-    cbxVideoDeviceList_.SetCurSel(default_selected);
-    OnCbnSelChangeVideoDeviceList();
-
-    return nDeviceCount;
-}
-
-int CAVStreamingDlg::EnumAudioDeviceList()
-{
-    int nDeviceCount = 0;
-    int default_selected = -1;
-
-    if (dShowCapture_ != NULL) {
-        nDeviceCount = dShowCapture_->ListAudioDevices();
-        if (nDeviceCount > 0) {
-            cbxAudioDeviceList_.Clear();
-        }
-        for (int i = 0; i < nDeviceCount; i++) {
-            const std::string & deviceName = dShowCapture_->audioDeviceList_[i];
-            std::tstring deviceNameW = Ansi2Unicode(deviceName);             
-            cbxAudioDeviceList_.AddString(deviceNameW.c_str());
-        }
-    }
-
-    if (default_selected == -1)
-        default_selected = 0;
-
-    cbxAudioDeviceList_.SetCurSel(default_selected);
-    OnCbnSelChangeAudioDeviceList();
-
-    return nDeviceCount;
 }
 
 void CAVStreamingDlg::OnSysCommand(UINT nID, LPARAM lParam)
@@ -232,42 +227,4 @@ void CAVStreamingDlg::OnPaint()
 HCURSOR CAVStreamingDlg::OnQueryDragIcon()
 {
 	return static_cast<HCURSOR>(m_hIcon);
-}
-
-void CAVStreamingDlg::OnCbnSelChangeVideoDeviceList()
-{
-    int selected_idx = cbxVideoDeviceList_.GetCurSel();
-    if (selected_idx < 0)
-        return;
-
-    CString name;
-    cbxVideoDeviceList_.GetWindowText(name);
-    std::tstring deviceNameW = name.GetBuffer();
-    if (deviceNameW.empty()) {
-        return;
-    }
-    std::string selectedDevice = Unicode2Ansi(deviceNameW);
-
-    if (dShowCapture_ != NULL) {
-        bool result = dShowCapture_->Render(UVC_PREVIEW_VIDEO, NULL, selectedDevice.c_str());
-    }
-}
-
-void CAVStreamingDlg::OnCbnSelChangeAudioDeviceList()
-{
-    int selected_idx = cbxAudioDeviceList_.GetCurSel();
-    if (selected_idx < 0)
-        return;
-
-    CString name;
-    cbxAudioDeviceList_.GetWindowText(name);
-    std::tstring deviceNameW = name.GetBuffer();
-    if (deviceNameW.empty()) {
-        return;
-    }
-
-    std::string selectedDevice = Unicode2Ansi(deviceNameW);
-    if (dShowCapture_ != NULL) {
-        bool result = dShowCapture_->CreateAudioFilter(selectedDevice.c_str());
-    }
 }

@@ -14,6 +14,18 @@ DShowCapture::DShowCapture(HWND hwndPreview /* = NULL */)
 {
     hwndPreview_ = hwndPreview;
 
+    InitInterfaces();
+}
+
+DShowCapture::~DShowCapture(void)
+{
+    CloseAndReleaseInterfaces();
+}
+
+void DShowCapture::InitInterfaces()
+{
+    playState_ = PLAY_STATE::Unknown;
+
     pFilterGraph_ = NULL;
     pCaptureBuilder_ = NULL;
     pVideoFilter_ = NULL;
@@ -24,19 +36,7 @@ DShowCapture::DShowCapture(HWND hwndPreview /* = NULL */)
     pVideoMediaEvent_ = NULL;
 }
 
-DShowCapture::~DShowCapture(void)
-{
-    SAFE_COM_RELEASE(pVideoMux_);
-    SAFE_COM_RELEASE(pVideoWindow_);
-    SAFE_COM_RELEASE(pVideoMediaControl_);
-    SAFE_COM_RELEASE(pVideoMediaEvent_);
-    SAFE_COM_RELEASE(pVideoFilter_);
-    SAFE_COM_RELEASE(pAudioFilter_);
-    SAFE_COM_RELEASE(pCaptureBuilder_);
-    SAFE_COM_RELEASE(pFilterGraph_);
-}
-
-HRESULT DShowCapture::Init()
+HRESULT DShowCapture::CreateInterfaces()
 {
     HRESULT hr;
 
@@ -59,6 +59,8 @@ HRESULT DShowCapture::Init()
 	if (FAILED(hr))
 		return hr;
 
+    playState_ = PLAY_STATE::Unknown;
+
     // 创建摄像头流媒体的控制开关
     SAFE_COM_RELEASE(pVideoMediaControl_);
     hr = pFilterGraph_->QueryInterface(IID_IMediaControl, (void **)&pVideoMediaControl_);
@@ -67,7 +69,7 @@ HRESULT DShowCapture::Init()
 
     // 创建摄像头流媒体的控制事件
     SAFE_COM_RELEASE(pVideoMediaEvent_);
-    hr = pFilterGraph_->QueryInterface(IID_IMediaEvent, (void **)&pVideoMediaEvent_);
+    hr = pFilterGraph_->QueryInterface(IID_IMediaEventEx, (void **)&pVideoMediaEvent_);
 	if (FAILED(hr))
 		return hr;
 
@@ -77,6 +79,47 @@ HRESULT DShowCapture::Init()
 	    if (FAILED(hr))
 		    return hr;
     }
+    return hr;
+}
+
+void DShowCapture::ReleaseInterfaces()
+{
+    SAFE_COM_RELEASE(pVideoMux_);
+    SAFE_COM_RELEASE(pVideoWindow_);
+    SAFE_COM_RELEASE(pVideoMediaControl_);
+    SAFE_COM_RELEASE(pVideoMediaEvent_);
+    SAFE_COM_RELEASE(pVideoFilter_);
+    SAFE_COM_RELEASE(pAudioFilter_);
+    SAFE_COM_RELEASE(pCaptureBuilder_);
+    SAFE_COM_RELEASE(pFilterGraph_);
+}
+
+HRESULT DShowCapture::CloseAndReleaseInterfaces()
+{
+    HRESULT hr = S_OK;
+
+    // Stop previewing data
+    if (pVideoMediaControl_ != NULL) {
+        hr = pVideoMediaControl_->StopWhenReady();
+    }
+
+    playState_ = PLAY_STATE::Stopped;
+
+    // Stop receiving events
+    if (pVideoMediaEvent_ != NULL) {
+        hr = pVideoMediaEvent_->SetNotifyWindow(NULL, WM_GRAPH_NOTIFY, 0);
+    }
+
+    // Relinquish ownership (IMPORTANT!) of the video window.
+    // Failing to call put_Owner can lead to assert failures within
+    // the video renderer, as it still assumes that it has a valid
+    // parent window.
+    if (pVideoWindow_ != NULL) {
+        pVideoWindow_->put_Visible(OAFALSE);
+        pVideoWindow_->put_Owner(NULL);
+    }
+
+    ReleaseInterfaces();
     return hr;
 }
 
@@ -90,6 +133,21 @@ HWND DShowCapture::SetPreviewHwnd(HWND hwndPreview, bool bAttachTo /* = false */
     return oldHwnd;
 }
 
+void DShowCapture::ResizeVideoWindow(HWND hwndPreview /* = NULL */)
+{
+    if (hwndPreview == NULL)
+        hwndPreview = hwndPreview_;
+
+    if (pVideoWindow_ != NULL) {
+        if (hwndPreview != NULL && ::IsWindow(hwndPreview)) {
+            CRect rc;
+            ::GetClientRect(hwndPreview, &rc);
+            // 让图像充满整个窗口
+            pVideoWindow_->SetWindowPosition(0, 0, rc.right, rc.bottom);
+        }
+    }
+}
+
 bool DShowCapture::AttachToVideoWindow(HWND hwndPreview)
 {
     // 检查视频播放窗口
@@ -97,23 +155,63 @@ bool DShowCapture::AttachToVideoWindow(HWND hwndPreview)
         return false;
 
     if (hwndPreview != NULL && ::IsWindow(hwndPreview)) {
+        HRESULT hr;
+
+        // Set the video window to be a child of the main window
         // 视频流放入 "Picture控件" 中来预览视频
-        if (pVideoWindow_->put_Owner((OAHWND)hwndPreview) < 0)
+        hr = pVideoWindow_->put_Owner((OAHWND)hwndPreview);
+        if (FAILED(hr))
             return false;
 
-        if (pVideoWindow_->put_WindowStyle(WS_CHILD | WS_CLIPCHILDREN) < 0)
+        // Set video window style
+        hr = pVideoWindow_->put_WindowStyle(WS_CHILD | WS_CLIPCHILDREN);
+        if (FAILED(hr))
             return false;
 
-        // 让图像充满整个窗口
-        CRect rc;
-        ::GetClientRect(hwndPreview, &rc);
-        pVideoWindow_->SetWindowPosition(0, 0, rc.right, rc.bottom);
+        hwndPreview_ = hwndPreview;
 
-        if (pVideoWindow_->put_Visible(OATRUE) < 0)
+        // Use helper function to position video window in client rect
+        // of main application window
+        ResizeVideoWindow(hwndPreview);
+
+        // Make the video window visible, now that it is properly positioned
+        hr = pVideoWindow_->put_Visible(OATRUE);
+        if (FAILED(hr))
             return false;
     }
 
     return true;
+}
+
+HRESULT DShowCapture::ChangePreviewState(PLAY_STATE playState /* = PLAY_STATE::Running */)
+{
+    HRESULT hr = E_FAIL;
+
+    // If the media control interface isn't ready, don't call it
+    if (!pVideoMediaControl_)
+        return E_FAIL;
+
+    if (playState == PLAY_STATE::Running) {
+        if (playState_ != PLAY_STATE::Running) {
+            // Start previewing video data
+            hr = pVideoMediaControl_->Run();
+            playState_ = playState;
+        }
+    }
+    else if (playState == PLAY_STATE::Paused) {
+        // Pause previewing video data
+        if (playState_ != PLAY_STATE::Paused) {
+            hr = pVideoMediaControl_->Pause();
+            playState_ = playState;
+        }
+    }
+    else {
+        // Stop previewing video data
+        hr = pVideoMediaControl_->StopWhenReady();
+        playState_ = playState;
+    }
+
+    return hr;
 }
 
 int DShowCapture::ListVideoConfigures()

@@ -42,6 +42,12 @@
     <ClInclude Include="..\..\..\src\AVStreaming\utils.h">
       <Filter>src</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\src\AVStreaming\CameraSettingDlg.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\AVStreaming\PreviewWnd.h">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\..\src\AVStreaming\stdafx.cpp">
@@ -60,6 +66,12 @@
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\src\AVStreaming\utils.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\src\AVStreaming\PreviewWnd.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\src\AVStreaming\CameraSettingDlg.cpp">
       <Filter>src</Filter>
     </ClCompile>
   </ItemGroup>
