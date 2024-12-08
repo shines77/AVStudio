@@ -18,10 +18,14 @@ CCameraHostDlg::CCameraHostDlg(CWnd * pParent /*=NULL*/)
 {
     hwndPreview_ = NULL;
     pCameraCapture_ = NULL;
+
+    inited_ = false;
 }
 
 CCameraHostDlg::~CCameraHostDlg()
 {
+    inited_ = false;
+
     SAFE_OBJECT_DELETE(pCameraCapture_);
 }
 
@@ -95,33 +99,17 @@ BOOL CCameraHostDlg::OnInitDialog()
     UpdateData(FALSE);
 
     if (pCameraCapture_ != NULL) {
-        EnumVideoDeviceList();
         EnumAudioDeviceList();
+        EnumVideoDeviceList();
 
         pCameraCapture_->ListVideoConfigures();
         pCameraCapture_->ListAudioConfigures();
+
+        inited_ = true;
+        StartCapture();
     }
 
 	return TRUE;  // 除非将焦点设置到控件，否则返回 TRUE
-}
-
-int CCameraHostDlg::EnumVideoDeviceList()
-{
-    int nDeviceCount = 0;
-    if (pCameraCapture_ != NULL) {
-        nDeviceCount = pCameraCapture_->ListVideoDevices();
-        cbxVideoDeviceList_.Clear();
-        if (nDeviceCount > 0) {
-            for (int i = 0; i < nDeviceCount; i++) {
-                const std::string & deviceName = pCameraCapture_->videoDeviceList_[i];
-                std::tstring deviceNameW = Ansi2Unicode(deviceName);              
-                cbxVideoDeviceList_.AddString(deviceNameW.c_str());
-            }
-            cbxVideoDeviceList_.SetCurSel(0);
-            OnCbnSelChangeVideoDeviceList();
-        }
-    }
-    return nDeviceCount;
 }
 
 int CCameraHostDlg::EnumAudioDeviceList()
@@ -137,7 +125,24 @@ int CCameraHostDlg::EnumAudioDeviceList()
                 cbxAudioDeviceList_.AddString(deviceNameW.c_str());
             }
             cbxAudioDeviceList_.SetCurSel(0);
-            OnCbnSelChangeAudioDeviceList();
+        }
+    }
+    return nDeviceCount;
+}
+
+int CCameraHostDlg::EnumVideoDeviceList()
+{
+    int nDeviceCount = 0;
+    if (pCameraCapture_ != NULL) {
+        nDeviceCount = pCameraCapture_->ListVideoDevices();
+        cbxVideoDeviceList_.Clear();
+        if (nDeviceCount > 0) {
+            for (int i = 0; i < nDeviceCount; i++) {
+                const std::string & deviceName = pCameraCapture_->videoDeviceList_[i];
+                std::tstring deviceNameW = Ansi2Unicode(deviceName);              
+                cbxVideoDeviceList_.AddString(deviceNameW.c_str());
+            }
+            cbxVideoDeviceList_.SetCurSel(0);
         }
     }
     return nDeviceCount;
@@ -183,16 +188,37 @@ std::string CCameraHostDlg::GetSelectedAudioDevice() const
 
 bool CCameraHostDlg::StartCapture()
 {
+    if (!inited_) {
+        return false;
+    }
+
     if (pCameraCapture_ != NULL) {
-        std::string videoDevice = GetSelectedVideoDevice();
-        std::string audioDevice = GetSelectedAudioDevice();
-        if (videoDevice != selectedVideoDevice_ && audioDevice != selectedAudioDevice_) {
-            bool result = pCameraCapture_->Render(MODE_PREVIEW_VIDEO, NULL,
-                                                  videoDevice.c_str(), audioDevice.c_str());
-            if (videoDevice != selectedVideoDevice_)
-                selectedVideoDevice_ = videoDevice;
-            if (audioDevice != selectedAudioDevice_)
-                selectedAudioDevice_ = audioDevice;
+        CCameraCapture::PLAY_STATE playState = pCameraCapture_->GetPlayState();
+        if (playState == CCameraCapture::PLAY_STATE::Paused) {
+            pCameraCapture_->ChangePreviewState(CCameraCapture::PLAY_STATE::Running);
+        }
+        else if (playState == CCameraCapture::PLAY_STATE::Running) {
+            pCameraCapture_->ChangePreviewState(CCameraCapture::PLAY_STATE::Paused);
+        }
+        else {
+            std::string videoDevice = GetSelectedVideoDevice();
+            std::string audioDevice = GetSelectedAudioDevice();
+            if (videoDevice != selectedVideoDevice_ && audioDevice != selectedAudioDevice_) {
+#if 1 || defined(_DEBUG)
+                bool result = pCameraCapture_->Render(MODE_PREVIEW_VIDEO, NULL,
+                                                      videoDevice.c_str(), audioDevice.c_str());
+#elif 0
+                bool result = pCameraCapture_->Render(MODE_RECORD_VIDEO, _T("test.avi"),
+                                                      videoDevice.c_str(), audioDevice.c_str());
+#else
+                bool result = pCameraCapture_->Render(MODE_LOCAL_VIDEO, _T("local.avi"),
+                                                      videoDevice.c_str(), audioDevice.c_str());
+#endif
+                if (videoDevice != selectedVideoDevice_)
+                    selectedVideoDevice_ = videoDevice;
+                if (audioDevice != selectedAudioDevice_)
+                    selectedAudioDevice_ = audioDevice;
+            }
         }
         return true;
     }
@@ -201,6 +227,19 @@ bool CCameraHostDlg::StartCapture()
 
 bool CCameraHostDlg::StopCapture()
 {
+    if (!inited_) {
+        return false;
+    }
+
+    if (pCameraCapture_ != NULL) {
+        CCameraCapture::PLAY_STATE playState = pCameraCapture_->GetPlayState();
+        if (playState == CCameraCapture::PLAY_STATE::Running) {
+            pCameraCapture_->ChangePreviewState(CCameraCapture::PLAY_STATE::Paused);
+        }
+        else if (playState == CCameraCapture::PLAY_STATE::Paused) {
+            pCameraCapture_->ChangePreviewState(CCameraCapture::PLAY_STATE::Stopped);
+        }
+    }
     return true;
 }
 

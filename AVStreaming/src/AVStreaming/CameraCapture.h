@@ -130,6 +130,10 @@ public:
     }
     HWND SetPreviewHwnd(HWND hwndPreview, bool bAttachTo = false);
 
+    PLAY_STATE GetPlayState() const {
+        return playState_;
+    }
+
     IVideoWindow * GetVideoWindow() const {
         return pVideoWindow_;
     }

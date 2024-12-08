@@ -350,7 +350,7 @@ int CCameraCapture::ListVideoDevices()
                 // 尝试用当前设备绑定到 video filter
                 IBaseFilter * pVideoFilter = NULL;
                 hr = pMoniker->BindToObject(0, 0, IID_IBaseFilter, (void **)&pVideoFilter);
-                if (SUCCEEDED(hr)) {
+                if (SUCCEEDED(hr) && pVideoFilter != NULL) {
                     // 绑定成功则添加到设备列表
                     videoDeviceList_.push_back(deviceName);
                     video_dev_count++;
@@ -435,7 +435,7 @@ int CCameraCapture::ListAudioDevices()
                 // 尝试用当前设备绑定到 audio filter
                 IBaseFilter * pAudioFilter = NULL;
                 hr = pMoniker->BindToObject(0, 0, IID_IBaseFilter, (void **)&pAudioFilter);
-                if (SUCCEEDED(hr)) {
+                if (SUCCEEDED(hr) && pAudioFilter != NULL) {
                     // 绑定成功则添加到设备列表
                     audioDeviceList_.push_back(deviceName);
                     audio_dev_count++;
@@ -658,7 +658,8 @@ bool CCameraCapture::Render(int mode, TCHAR * videoPath,
             return false;
 
         // 将 Video filter 加入 filter graph
-        if (hr = pFilterGraph_->AddFilter(pVideoFilter_, L"Video Filter"), FAILED(hr))
+        hr = pFilterGraph_->AddFilter(pVideoFilter_, L"Video Filter");
+        if (hr != NOERROR)
             return false;
 
         if (mode == MODE_RECORD_VIDEO) {
@@ -666,15 +667,22 @@ bool CCameraCapture::Render(int mode, TCHAR * videoPath,
             result = CreateAudioFilter(audioDevice);
             if (result) {
                 // 将 Audio filter 加入 filter graph
-                if (hr = pFilterGraph_->AddFilter(pAudioFilter_, L"Audio Filter"), FAILED(hr))
+                hr = pFilterGraph_->AddFilter(pAudioFilter_, L"Audio Filter");
+                if (hr != NOERROR)
                     return false;
             }
         }
     }
 
     if (mode == MODE_PREVIEW_VIDEO) {     // 预览视频
-        if (pCaptureBuilder_->RenderStream(&PIN_CATEGORY_PREVIEW, &MEDIATYPE_Video, pVideoFilter_, NULL, NULL) < 0)
+        hr = pCaptureBuilder_->RenderStream(&PIN_CATEGORY_PREVIEW, &MEDIATYPE_Video, pVideoFilter_, NULL, NULL);
+        if (hr == VFW_S_NOPREVIEWPIN) {
+            // preview was faked up for us using the (only) capture pin
+        }
+        else if (hr != S_OK) {
+            OutputDebugString(_T("This graph cannot preview!\n"));
             return false;
+        }
     }
     else if (mode == MODE_RECORD_VIDEO) { // 录制视频
         USES_CONVERSION;
@@ -682,20 +690,29 @@ bool CCameraCapture::Render(int mode, TCHAR * videoPath,
 
         // 设置输出文件
         SAFE_COM_RELEASE(pVideoMux_);
-        if (pCaptureBuilder_->SetOutputFileName(&MEDIASUBTYPE_Avi, OLE_PathName, &pVideoMux_, NULL) < 0)
+        hr = pCaptureBuilder_->SetOutputFileName(&MEDIASUBTYPE_Avi, OLE_PathName, &pVideoMux_, NULL);
+        if (hr != NOERROR)
             return false;
 
         // 录制的时候也需要预览
-        if (pCaptureBuilder_->RenderStream(&PIN_CATEGORY_PREVIEW, &MEDIATYPE_Video, pVideoFilter_, NULL, NULL) < 0)
+        hr = pCaptureBuilder_->RenderStream(&PIN_CATEGORY_PREVIEW, &MEDIATYPE_Video, pVideoFilter_, NULL, NULL);
+        if (hr == VFW_S_NOPREVIEWPIN) {
+            // preview was faked up for us using the (only) capture pin
+        }
+        else if (hr != S_OK) {
+            OutputDebugString(_T("This graph cannot preview!\n"));
             return false;
+        }
 
         // 视频流写入 avi 文件
         if (pVideoMux_ != NULL) {
-            if (pCaptureBuilder_->RenderStream(&PIN_CATEGORY_CAPTURE, &MEDIATYPE_Video, pVideoFilter_, NULL, pVideoMux_) < 0)
+            hr = pCaptureBuilder_->RenderStream(&PIN_CATEGORY_CAPTURE, &MEDIATYPE_Video, pVideoFilter_, NULL, pVideoMux_);
+            if (hr != NOERROR)
                 return false;
 
             if (pAudioFilter_ != NULL) {
-                if (pCaptureBuilder_->RenderStream(&PIN_CATEGORY_CAPTURE, &MEDIATYPE_Audio, pAudioFilter_, NULL, pVideoMux_) < 0)
+                hr = pCaptureBuilder_->RenderStream(&PIN_CATEGORY_CAPTURE, &MEDIATYPE_Audio, pAudioFilter_, NULL, pVideoMux_);
+                if (hr != NOERROR)
                     return false;
             }
         }
@@ -703,7 +720,10 @@ bool CCameraCapture::Render(int mode, TCHAR * videoPath,
     else if (mode == MODE_LOCAL_VIDEO) {   // 播放本地视频
         USES_CONVERSION;
         LPCOLESTR OLE_PathName = T2OLE(videoPath); // 类型转化
-        pFilterGraph_->RenderFile(OLE_PathName, NULL);
+        hr = pFilterGraph_->RenderFile(OLE_PathName, NULL);
+        if (hr != NOERROR) {
+            return false;
+        }
     }
 
     /******* 设置视频播放窗口 *******/
@@ -715,7 +735,8 @@ bool CCameraCapture::Render(int mode, TCHAR * videoPath,
         return false;
 
     // 开始预览或录制
-    if (pVideoMediaControl_->Run() < 0)
+    hr = pVideoMediaControl_->Run();
+    if (FAILED(hr))
         return false;
 
     return true;
@@ -781,6 +802,7 @@ HRESULT CCameraCapture::ChangePreviewState(PLAY_STATE playState /* = PLAY_STATE:
     else {
         // Stop previewing video data
         hr = pVideoMediaControl_->StopWhenReady();
+        //hr = pVideoMediaControl_->Stop();
         playState_ = playState;
     }
 

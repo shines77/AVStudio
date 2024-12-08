@@ -59,6 +59,7 @@ private:
     HWND             hwndPreview_;
     CCameraCapture * pCameraCapture_;
 
+    bool        inited_;
     std::string selectedVideoDevice_;
     std::string selectedAudioDevice_;
 
