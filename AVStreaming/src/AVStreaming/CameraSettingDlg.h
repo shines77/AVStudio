@@ -16,7 +16,7 @@ class CCameraSettingDlg : public CDialogEx
 	DECLARE_DYNAMIC(CCameraSettingDlg)
 
 public:
-	CCameraSettingDlg(CWnd* pParent = NULL);   // 标准构造函数
+	CCameraSettingDlg(CWnd * pParent = NULL);   // 标准构造函数
 	virtual ~CCameraSettingDlg();
 
 // 对话框数据
@@ -31,10 +31,12 @@ public:
 
 protected:
     virtual BOOL OnInitDialog();
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV 支持
+	virtual void DoDataExchange(CDataExchange * pDX);    // DDX/DDV 支持
     afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
     afx_msg void OnCbnSelChangeVideoDeviceList();
     afx_msg void OnCbnSelChangeAudioDeviceList();
+    virtual BOOL PreTranslateMessage(MSG * pMsg);
+    virtual LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam);
 	DECLARE_MESSAGE_MAP()
 
 protected:
@@ -46,5 +48,5 @@ private:
     DShowCapture *  pDShowCapture_;
 
     CComboBox   cbxVideoDeviceList_;
-    CComboBox   cbxAudioDeviceList_;    
+    CComboBox   cbxAudioDeviceList_;       
 };

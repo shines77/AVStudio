@@ -12,11 +12,12 @@ IMPLEMENT_DYNAMIC(CPreviewWnd, CWnd)
 
 CPreviewWnd::CPreviewWnd()
 {
-
+    //
 }
 
 CPreviewWnd::~CPreviewWnd()
 {
+    //
 }
 
 BOOL CPreviewWnd::Create(LPCTSTR lpszWindowName, DWORD dwStyle, const RECT & rect,

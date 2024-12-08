@@ -21,13 +21,13 @@
 #pragma comment(lib, "quartz.lib")
 #endif
 
-#define UVC_PREVIEW_VIDEO       1
-#define UVC_RECORD_VIDEO        2
-#define UVC_LOCAL_VIDEO         3
+#define MODE_PREVIEW_VIDEO          1
+#define MODE_RECORD_VIDEO           2
+#define MODE_LOCAL_VIDEO            3
 
-#define UVC_STOP_PREVIEW        1
-#define UVC_STOP_RECORD         2
-#define UVC_STOP_LOCAL_VIDEO    3
+#define ACTION_STOP_PREVIEW         1
+#define ACTION_STOP_RECORD          2
+#define ACTION_STOP_LOCAL_VIDEO     3
 
 // Application-defined message to notify app of filtergraph events
 #define WM_GRAPH_NOTIFY         (WM_APP + 1)
@@ -130,14 +130,20 @@ public:
     };
 
     HRESULT CreateInterfaces();
-    HRESULT CloseAndReleaseInterfaces();
+    HRESULT StopAndReleaseInterfaces();
 
     HWND GetPreviewHwnd() const {
         return hwndPreview_;
     }
     HWND SetPreviewHwnd(HWND hwndPreview, bool bAttachTo = false);
 
+    IVideoWindow * GetVideoWindow() const {
+        return pVideoWindow_;
+    }
+
+    HRESULT WindowStateChange(BOOL isShow);
     HRESULT ChangePreviewState(PLAY_STATE playState = PLAY_STATE::Running);
+    HRESULT HandleGraphEvent(void);
 
     void ResizeVideoWindow(HWND hwndPreview = NULL);
     bool AttachToVideoWindow(HWND hwndPreview);

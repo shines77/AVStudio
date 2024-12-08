@@ -12,7 +12,7 @@
 
 IMPLEMENT_DYNAMIC(CCameraSettingDlg, CDialogEx)
 
-CCameraSettingDlg::CCameraSettingDlg(CWnd* pParent /*=NULL*/)
+CCameraSettingDlg::CCameraSettingDlg(CWnd * pParent /*=NULL*/)
 	: CDialogEx(IDD_CAMERA_SETTING_DLG, pParent)
 {
     hwndPreview_ = NULL;
@@ -24,7 +24,7 @@ CCameraSettingDlg::~CCameraSettingDlg()
     SAFE_OBJECT_DELETE(pDShowCapture_);
 }
 
-void CCameraSettingDlg::DoDataExchange(CDataExchange* pDX)
+void CCameraSettingDlg::DoDataExchange(CDataExchange * pDX)
 {
 	CDialogEx::DoDataExchange(pDX);
     DDX_Control(pDX, IDC_VIDEO_DEVICE_LIST, cbxVideoDeviceList_);
@@ -166,7 +166,7 @@ void CCameraSettingDlg::OnCbnSelChangeVideoDeviceList()
     std::string selectedDevice = Unicode2Ansi(deviceNameW);
 
     if (pDShowCapture_ != NULL) {
-        bool result = pDShowCapture_->Render(UVC_PREVIEW_VIDEO, NULL, selectedDevice.c_str());
+        bool result = pDShowCapture_->Render(MODE_PREVIEW_VIDEO, NULL, selectedDevice.c_str());
     }
 }
 
@@ -187,4 +187,59 @@ void CCameraSettingDlg::OnCbnSelChangeAudioDeviceList()
     if (pDShowCapture_ != NULL) {
         bool result = pDShowCapture_->CreateAudioFilter(selectedDevice.c_str());
     }
+}
+
+LRESULT CCameraSettingDlg::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
+{
+    switch (message)
+    {
+        case WM_GRAPH_NOTIFY:
+            if (pDShowCapture_ != NULL) {
+                pDShowCapture_->HandleGraphEvent();
+            }
+            break;
+
+        case WM_SIZE:
+            if (pDShowCapture_ != NULL) {
+                pDShowCapture_->ResizeVideoWindow();
+            }
+            break;
+
+        case WM_WINDOWPOSCHANGED:
+            if (pDShowCapture_ != NULL) {
+                pDShowCapture_->WindowStateChange(!this->IsIconic());
+            }
+            break;
+
+        case WM_CLOSE:
+            // Hide the main window while the graph is destroyed
+            if (pDShowCapture_ != NULL) {
+                HWND hwndPreview = pDShowCapture_->GetPreviewHwnd();
+                if (hwndPreview != NULL && ::IsWindow(hwndPreview)) {
+                    ::ShowWindow(hwndPreview, SW_HIDE);
+                }
+            }
+            // Stop capturing and release interfaces
+            pDShowCapture_->StopAndReleaseInterfaces();
+            break;
+
+        case WM_DESTROY:
+            ::PostQuitMessage(0);
+            return 0;
+    }
+
+    // Pass this message to the video window for notification of system changes
+    if (pDShowCapture_ != NULL) {
+        IVideoWindow * pVideoWindow = pDShowCapture_->GetVideoWindow();
+        if (pVideoWindow != NULL) {
+            pVideoWindow->NotifyOwnerMessage((LONG_PTR)this->GetSafeHwnd(), message, wParam, lParam);
+        }
+    }
+    return CDialogEx::WindowProc(message, wParam, lParam);
+}
+
+BOOL CCameraSettingDlg::PreTranslateMessage(MSG * pMsg)
+{
+
+    return CDialogEx::PreTranslateMessage(pMsg);
 }

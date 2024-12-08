@@ -19,7 +19,7 @@ DShowCapture::DShowCapture(HWND hwndPreview /* = NULL */)
 
 DShowCapture::~DShowCapture(void)
 {
-    CloseAndReleaseInterfaces();
+    StopAndReleaseInterfaces();
 }
 
 void DShowCapture::InitInterfaces()
@@ -94,7 +94,7 @@ void DShowCapture::ReleaseInterfaces()
     SAFE_COM_RELEASE(pFilterGraph_);
 }
 
-HRESULT DShowCapture::CloseAndReleaseInterfaces()
+HRESULT DShowCapture::StopAndReleaseInterfaces()
 {
     HRESULT hr = S_OK;
 
@@ -181,6 +181,16 @@ bool DShowCapture::AttachToVideoWindow(HWND hwndPreview)
     }
 
     return true;
+}
+
+HRESULT DShowCapture::WindowStateChange(BOOL isShow)
+{
+    HRESULT hr;
+    if (isShow)
+        hr = ChangePreviewState(PLAY_STATE::Running);
+    else
+        hr = ChangePreviewState(PLAY_STATE::Stopped);
+    return hr;
 }
 
 HRESULT DShowCapture::ChangePreviewState(PLAY_STATE playState /* = PLAY_STATE::Running */)
@@ -341,7 +351,19 @@ int DShowCapture::ListVideoDevices()
     videoDeviceList_.clear();
 
     // 枚举设备
-    while (hr = pEnumMoniker->Next(1, &pMoniker, &cFetched), hr == S_OK) {
+    while (1) {
+        hr = pEnumMoniker->Next(1, &pMoniker, &cFetched);
+        if (hr == E_FAIL)
+            break;
+        else if (hr == S_FALSE) {
+            CString text;
+            text.Format(_T("Unable to access video capture device! index = %d\n"), video_dev_total);
+            OutputDebugString(text.GetBuffer());
+            break;
+        }
+        else if (hr != S_OK) {
+            break;
+        }
         // 设备属性信息
         IPropertyBag * pPropBag = NULL;
         hr = pMoniker->BindToStorage(0, 0, IID_IPropertyBag, (void **)&pPropBag);
@@ -369,7 +391,9 @@ int DShowCapture::ListVideoDevices()
                     }
                 }
                 else {
-                    OutputDebugString(_T("Video BindToObject Failed\n"));
+                    CString text;
+                    text.Format(_T("Video BindToObject Failed. index = %d\n"), video_dev_total);
+                    OutputDebugString(text.GetBuffer());
                 }
             }
             pPropBag->Release();
@@ -412,7 +436,19 @@ int DShowCapture::ListAudioDevices()
     audioDeviceList_.clear();
 
     // 枚举设备
-    while (hr = pEnumMoniker->Next(1, &pMoniker, &cFetched), hr == S_OK) {
+    while (1) {
+        hr = pEnumMoniker->Next(1, &pMoniker, &cFetched);
+        if (hr == E_FAIL)
+            break;
+        else if (hr == S_FALSE) {
+            CString text;
+            text.Format(_T("Unable to access audio capture device! index = %d\n"), audio_dev_total);
+            OutputDebugString(text.GetBuffer());
+            break;
+        }
+        else if (hr != S_OK) {
+            break;
+        }
         // 设备属性信息
         IPropertyBag * pPropBag = NULL;
         hr = pMoniker->BindToStorage(0, 0, IID_IPropertyBag, (void **)&pPropBag);
@@ -440,7 +476,9 @@ int DShowCapture::ListAudioDevices()
                     }
                 }
                 else {
-                    OutputDebugString(_T("Audio BindToObject Failed\n"));
+                    CString text;
+                    text.Format(_T("Audio BindToObject Failed. index = %d\n"), audio_dev_total);
+                    OutputDebugString(text.GetBuffer());
                 }
             }
             pPropBag->Release();
@@ -488,10 +526,23 @@ bool DShowCapture::CreateVideoFilter(const char * selectedDevice)
 
     bool result = false;
     ULONG cFetched = 0;
+    int nIndex = 0;
     IMoniker * pMoniker = NULL;
 
     // 枚举设备
-    while (hr = pEnumMoniker->Next(1, &pMoniker, &cFetched), hr == S_OK) {
+    while (1) {
+        hr = pEnumMoniker->Next(1, &pMoniker, &cFetched);
+        if (hr == E_FAIL)
+            break;
+        else if (hr == S_FALSE) {
+            CString text;
+            text.Format(_T("Unable to access video capture device! index = %d\n"), nIndex);
+            OutputDebugString(text.GetBuffer());
+            break;
+        }
+        else if (hr != S_OK) {
+            break;
+        }
         // 设备属性信息
         IPropertyBag * pPropBag = NULL;
         hr = pMoniker->BindToStorage(0, 0, IID_IPropertyBag, (void **)&pPropBag);
@@ -515,7 +566,9 @@ bool DShowCapture::CreateVideoFilter(const char * selectedDevice)
                         result = true;
                     }
                     else {
-                        OutputDebugString(_T("Video BindToObject Failed\n"));
+                        CString text;
+                        text.Format(_T("Video BindToObject Failed. index = %d\n"), nIndex);
+                        OutputDebugString(text.GetBuffer());
                     }
                 }
             }
@@ -523,6 +576,7 @@ bool DShowCapture::CreateVideoFilter(const char * selectedDevice)
         }
         pMoniker->Release();
         pMoniker = NULL;
+        nIndex++;
     }
 
     pEnumMoniker->Release();
@@ -550,10 +604,23 @@ bool DShowCapture::CreateAudioFilter(const char * selectedDevice)
 
     bool result = false;
     ULONG cFetched = 0;
+    int nIndex = 0;
     IMoniker * pMoniker = NULL;
 
     // 枚举设备
-    while (hr = pEnumMoniker->Next(1, &pMoniker, &cFetched), hr == S_OK) {
+    while (1) {
+        hr = pEnumMoniker->Next(1, &pMoniker, &cFetched);
+        if (hr == E_FAIL)
+            break;
+        else if (hr == S_FALSE) {
+            CString text;
+            text.Format(_T("Unable to access audio capture device! index = %d\n"), nIndex);
+            OutputDebugString(text.GetBuffer());
+            break;
+        }
+        else if (hr != S_OK) {
+            break;
+        }
         // 设备属性信息
         IPropertyBag * pPropBag = NULL;
         hr = pMoniker->BindToStorage(0, 0, IID_IPropertyBag, (void **)&pPropBag);
@@ -577,7 +644,9 @@ bool DShowCapture::CreateAudioFilter(const char * selectedDevice)
                         result = true;
                     }
                     else {
-                        OutputDebugString(_T("Audio BindToObject Failed\n"));
+                        CString text;
+                        text.Format(_T("Audio BindToObject Failed. index = %d\n"), nIndex);
+                        OutputDebugString(text.GetBuffer());
                     }
                 }
             }
@@ -585,6 +654,7 @@ bool DShowCapture::CreateAudioFilter(const char * selectedDevice)
         }
         pMoniker->Release();
         pMoniker = NULL;
+        nIndex++;
     }
 
     pEnumMoniker->Release();
@@ -601,7 +671,7 @@ bool DShowCapture::Render(int mode, TCHAR * videoPath, const char * selectedDevi
     if (pFilterGraph_ == NULL)
         return false;
 
-    if (mode != UVC_LOCAL_VIDEO) {
+    if (mode != MODE_LOCAL_VIDEO) {
         // 创建 Video filter
         bool result = CreateVideoFilter(selectedDevice);
         if (!result)
@@ -616,11 +686,11 @@ bool DShowCapture::Render(int mode, TCHAR * videoPath, const char * selectedDevi
             return false;
     }
 
-    if (mode == UVC_PREVIEW_VIDEO) {     // 预览视频
+    if (mode == MODE_PREVIEW_VIDEO) {     // 预览视频
         if (pCaptureBuilder_->RenderStream(&PIN_CATEGORY_PREVIEW, &MEDIATYPE_Video, pVideoFilter_, NULL, NULL) < 0)
             return false;
     }
-    else if (mode == UVC_RECORD_VIDEO) { // 录制视频
+    else if (mode == MODE_RECORD_VIDEO) { // 录制视频
         USES_CONVERSION;
         LPCOLESTR OLE_PathName = T2OLE(videoPath); // 类型转化
 
@@ -637,7 +707,7 @@ bool DShowCapture::Render(int mode, TCHAR * videoPath, const char * selectedDevi
         if (pVideoMux_ != NULL && pCaptureBuilder_->RenderStream(&PIN_CATEGORY_CAPTURE, &MEDIATYPE_Video, pVideoFilter_, NULL, pVideoMux_) < 0)
             return false;
     }
-    else if (mode == UVC_LOCAL_VIDEO) {   // 播放本地视频
+    else if (mode == MODE_LOCAL_VIDEO) {   // 播放本地视频
         USES_CONVERSION;
         LPCOLESTR OLE_PathName = T2OLE(videoPath); // 类型转化
         pFilterGraph_->RenderFile(OLE_PathName, NULL);
@@ -658,13 +728,38 @@ bool DShowCapture::Render(int mode, TCHAR * videoPath, const char * selectedDevi
     return true;
 }
 
+HRESULT DShowCapture::HandleGraphEvent(void)
+{
+    LONG evCode = -1;
+	LONG_PTR evParam1 = NULL, evParam2 = NULL;
+    HRESULT hr = S_OK;
+
+    if (pVideoMediaEvent_ == NULL)
+        return E_POINTER;
+
+    while (SUCCEEDED(pVideoMediaEvent_->GetEvent(&evCode, &evParam1, &evParam2, 0))) {
+        //
+        // Insert event processing code here, if desired
+        //
+
+        //
+        // Free event parameters to prevent memory leaks associated with
+        // event parameter data.  While this application is not interested
+        // in the received events, applications should always process them.
+        //
+        hr = pVideoMediaEvent_->FreeEventParams(evCode, evParam1, evParam2);
+    }
+
+    return hr;
+}
+
 // 关闭摄像头
-bool DShowCapture::StopCurrentOperating(int stop_type)
+bool DShowCapture::StopCurrentOperating(int action_type)
 {
     if (pVideoMediaControl_->Stop() < 0)
         return false;
 
-    if (stop_type != UVC_STOP_LOCAL_VIDEO) {
+    if (action_type != ACTION_STOP_LOCAL_VIDEO) {
         pVideoFilter_->Release();
         pCaptureBuilder_->Release();
     }
