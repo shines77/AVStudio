@@ -6,20 +6,13 @@
 #include <string>
 #include <vector>
 
-#if 1
-//#pragma comment(lib, "winmm.lib")
-//#pragma comment(lib, "legacy_stdio_definitions.lib")
-
 #ifdef _DEBUG
-//#pragma comment(lib, "vcruntimed.lib")
 #pragma comment(lib, "strmbased.lib")
 #else
-//#pragma comment(lib, "vcruntime.lib")
 #pragma comment(lib, "strmbase.lib")
 #endif
 #pragma comment(lib, "strmiids.lib")
 #pragma comment(lib, "quartz.lib")
-#endif
 
 #define MODE_PREVIEW_VIDEO          1
 #define MODE_RECORD_VIDEO           2
@@ -30,7 +23,7 @@
 #define ACTION_STOP_LOCAL_VIDEO     3
 
 // Application-defined message to notify app of filtergraph events
-#define WM_GRAPH_NOTIFY         (WM_APP + 1)
+#define WM_GRAPH_NOTIFY             (WM_APP + 1)
 
 struct CamVideoConfig
 {
@@ -107,11 +100,11 @@ struct CamAudioConfig
 	}
 };
 
-class DShowCapture
+class CCameraCapture
 {
 public:
-    DShowCapture(HWND hwndPreview = NULL);
-    ~DShowCapture(void);
+    CCameraCapture(HWND hwndPreview = NULL);
+    ~CCameraCapture(void);
 
     std::vector<std::string> videoDeviceList_;
     std::vector<std::string> audioDeviceList_;

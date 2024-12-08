@@ -6,6 +6,9 @@
 #include "AVStreaming.h"
 #include "AVStreamingDlg.h"
 
+#include "PreviewWnd.h"
+#include "CameraHostDlg.h"
+#include "CameraCapture.h"
 #include "utils.h"
 
 #ifdef _DEBUG
@@ -53,13 +56,13 @@ CAVStreamingDlg::CAVStreamingDlg(CWnd* pParent /* = NULL */)
 {
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
 
-    pCameraSettingDlg_ = NULL;
     pPreviewWnd_ = NULL;
+    pCameraHostDlg_ = NULL;
 }
 
 CAVStreamingDlg::~CAVStreamingDlg()
 {
-    SAFE_OBJECT_DELETE(pCameraSettingDlg_);
+    SAFE_OBJECT_DELETE(pCameraHostDlg_);
     SAFE_OBJECT_DELETE(pPreviewWnd_);
 }
 
@@ -146,33 +149,44 @@ BOOL CAVStreamingDlg::OnInitDialog()
 
     if (pPreviewWnd_ == NULL) {
         CRect rcWnd(10, 10, 10 + kDefaultVideoPreviewWidth, 10 + kDefaultVideoPreviewHeight);
-        pPreviewWnd_ = new CPreviewWnd;
-        pPreviewWnd_->Create(_T("摄像头预览窗口"),
-                             WS_CHILD | WS_CLIPCHILDREN, rcWnd,
-                             this, IDC_CAMERA_PREVIEW);
-        pPreviewWnd_->ShowWindow(SW_SHOWNORMAL);
+        CPreviewWnd * pPreviewWnd = new CPreviewWnd;
+        if (pPreviewWnd != NULL) {
+            pPreviewWnd->Create(_T("摄像头预览窗口"),
+                                 WS_CHILD | WS_CLIPCHILDREN, rcWnd,
+                                 this, IDC_CAMERA_PREVIEW);
+            pPreviewWnd->ShowWindow(SW_SHOWNORMAL);
 
-        CRect rcClient;
-        pPreviewWnd_->GetClientRect(rcClient);
+            CRect rcClient;
+            pPreviewWnd->GetClientRect(rcClient);
 
-        CString text;
-        text.Format(_T("r: %ul, l: %ul, width: %d, height: %d\n"), rcClient.left, rcClient.left, rcClient.Width(), rcClient.Height());
-        ::OutputDebugString(text.GetBuffer());
+            CString text;
+            text.Format(_T("r: %ul, l: %ul, width: %d, height: %d\n"), rcClient.left, rcClient.left, rcClient.Width(), rcClient.Height());
+            ::OutputDebugString(text.GetBuffer());
+
+            pPreviewWnd_ = pPreviewWnd;
+        }
     }
 
-    if (pCameraSettingDlg_ == NULL) {
-        pCameraSettingDlg_ = new CCameraSettingDlg;
-        if (pPreviewWnd_ != NULL && pPreviewWnd_->GetSafeHwnd())
-            pCameraSettingDlg_->Create(IDD_CAMERA_SETTING_DLG, pPreviewWnd_->GetSafeHwnd(), this);
-        else
-            pCameraSettingDlg_->Create(IDD_CAMERA_SETTING_DLG, NULL, this);
+    if (pCameraHostDlg_ == NULL) {
+        CCameraHostDlg * pCameraHostDlg = new CCameraHostDlg;
+        if (pCameraHostDlg != NULL) {
+            if (pPreviewWnd_ != NULL && pPreviewWnd_->GetSafeHwnd()) {
+                pCameraHostDlg->Create(IDD_CAMERA_SETTING_DLG, pPreviewWnd_->GetSafeHwnd(), this);
+                pPreviewWnd_->SetHostWnd(pCameraHostDlg);
+            }
+            else {
+                pCameraHostDlg->Create(IDD_CAMERA_SETTING_DLG, NULL, this);
+            }
         
-        pCameraSettingDlg_->ShowWindow(SW_SHOWNORMAL);
+            pCameraHostDlg->ShowWindow(SW_SHOWNORMAL);
 
-        CRect rcClient;
-        pCameraSettingDlg_->GetClientRect(rcClient);
-        pCameraSettingDlg_->MoveWindow(10 + kDefaultVideoPreviewWidth + 10, 10,
+            CRect rcClient;
+            pCameraHostDlg->GetClientRect(rcClient);
+            pCameraHostDlg->MoveWindow(10 + kDefaultVideoPreviewWidth + 10, 10,
                                        rcClient.Width(), rcClient.Height(), TRUE);
+
+            pCameraHostDlg_ = pCameraHostDlg;
+        }
     }
 
     // 设置对话框的缩放比例
@@ -227,4 +241,36 @@ void CAVStreamingDlg::OnPaint()
 HCURSOR CAVStreamingDlg::OnQueryDragIcon()
 {
 	return static_cast<HCURSOR>(m_hIcon);
+}
+
+BOOL CAVStreamingDlg::PreTranslateMessage(MSG* pMsg)
+{
+    if (pMsg->message == WM_KEYDOWN) {
+        if (pMsg->wParam == VK_ESCAPE) {
+            // 按下 ESC 键时不做任何处理
+            return TRUE; // 返回 TRUE 表示消息已被处理
+        }
+    }
+    return CDialogEx::PreTranslateMessage(pMsg);
+}
+
+LRESULT CAVStreamingDlg::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
+{
+    switch (message)
+    {
+        case WM_WINDOWPOSCHANGED:
+            if (pCameraHostDlg_ != NULL) {
+                CCameraCapture * pCameraCapture = pCameraHostDlg_->GetSafeCapture();
+                if (pCameraCapture != NULL) {
+                    pCameraCapture->WindowStateChange(!this->IsIconic());
+                }
+            }
+            break;
+
+        case WM_DESTROY:
+            ::PostQuitMessage(0);
+            return 0;
+    }
+
+    return CDialogEx::WindowProc(message, wParam, lParam);
 }

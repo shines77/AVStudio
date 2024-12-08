@@ -1,28 +1,28 @@
 #include "stdafx.h"
-#include "DShowCapture.h"
-
-#include "Mtype.h"
+#include "CameraCapture.h"
 
 #include <atlconv.h>
+
+#include "Mtype.h"
 
 //
 // From: https://blog.csdn.net/ett_qin/article/details/86691479
 // See: https://www.cnblogs.com/linuxAndMcu/p/12068978.html
 //
 
-DShowCapture::DShowCapture(HWND hwndPreview /* = NULL */)
+CCameraCapture::CCameraCapture(HWND hwndPreview /* = NULL */)
 {
     hwndPreview_ = hwndPreview;
 
     InitInterfaces();
 }
 
-DShowCapture::~DShowCapture(void)
+CCameraCapture::~CCameraCapture(void)
 {
     StopAndReleaseInterfaces();
 }
 
-void DShowCapture::InitInterfaces()
+void CCameraCapture::InitInterfaces()
 {
     playState_ = PLAY_STATE::Unknown;
 
@@ -36,7 +36,7 @@ void DShowCapture::InitInterfaces()
     pVideoMediaEvent_ = NULL;
 }
 
-HRESULT DShowCapture::CreateInterfaces()
+HRESULT CCameraCapture::CreateInterfaces()
 {
     HRESULT hr;
 
@@ -82,7 +82,7 @@ HRESULT DShowCapture::CreateInterfaces()
     return hr;
 }
 
-void DShowCapture::ReleaseInterfaces()
+void CCameraCapture::ReleaseInterfaces()
 {
     SAFE_COM_RELEASE(pVideoMux_);
     SAFE_COM_RELEASE(pVideoWindow_);
@@ -94,7 +94,7 @@ void DShowCapture::ReleaseInterfaces()
     SAFE_COM_RELEASE(pFilterGraph_);
 }
 
-HRESULT DShowCapture::StopAndReleaseInterfaces()
+HRESULT CCameraCapture::StopAndReleaseInterfaces()
 {
     HRESULT hr = S_OK;
 
@@ -119,11 +119,13 @@ HRESULT DShowCapture::StopAndReleaseInterfaces()
         pVideoWindow_->put_Owner(NULL);
     }
 
+    hwndPreview_ = NULL;
+
     ReleaseInterfaces();
     return hr;
 }
 
-HWND DShowCapture::SetPreviewHwnd(HWND hwndPreview, bool bAttachTo /* = false */)
+HWND CCameraCapture::SetPreviewHwnd(HWND hwndPreview, bool bAttachTo /* = false */)
 {
     HWND oldHwnd = hwndPreview_;
     hwndPreview_ = hwndPreview;
@@ -133,22 +135,7 @@ HWND DShowCapture::SetPreviewHwnd(HWND hwndPreview, bool bAttachTo /* = false */
     return oldHwnd;
 }
 
-void DShowCapture::ResizeVideoWindow(HWND hwndPreview /* = NULL */)
-{
-    if (hwndPreview == NULL)
-        hwndPreview = hwndPreview_;
-
-    if (pVideoWindow_ != NULL) {
-        if (hwndPreview != NULL && ::IsWindow(hwndPreview)) {
-            CRect rc;
-            ::GetClientRect(hwndPreview, &rc);
-            // 让图像充满整个窗口
-            pVideoWindow_->SetWindowPosition(0, 0, rc.right, rc.bottom);
-        }
-    }
-}
-
-bool DShowCapture::AttachToVideoWindow(HWND hwndPreview)
+bool CCameraCapture::AttachToVideoWindow(HWND hwndPreview)
 {
     // 检查视频播放窗口
     if (pVideoWindow_ == NULL)
@@ -183,48 +170,22 @@ bool DShowCapture::AttachToVideoWindow(HWND hwndPreview)
     return true;
 }
 
-HRESULT DShowCapture::WindowStateChange(BOOL isShow)
+void CCameraCapture::ResizeVideoWindow(HWND hwndPreview /* = NULL */)
 {
-    HRESULT hr;
-    if (isShow)
-        hr = ChangePreviewState(PLAY_STATE::Running);
-    else
-        hr = ChangePreviewState(PLAY_STATE::Stopped);
-    return hr;
-}
+    if (hwndPreview == NULL)
+        hwndPreview = hwndPreview_;
 
-HRESULT DShowCapture::ChangePreviewState(PLAY_STATE playState /* = PLAY_STATE::Running */)
-{
-    HRESULT hr = E_FAIL;
-
-    // If the media control interface isn't ready, don't call it
-    if (!pVideoMediaControl_)
-        return E_FAIL;
-
-    if (playState == PLAY_STATE::Running) {
-        if (playState_ != PLAY_STATE::Running) {
-            // Start previewing video data
-            hr = pVideoMediaControl_->Run();
-            playState_ = playState;
+    if (pVideoWindow_ != NULL) {
+        if (hwndPreview != NULL && ::IsWindow(hwndPreview)) {
+            CRect rc;
+            ::GetClientRect(hwndPreview, &rc);
+            // 让图像充满整个窗口
+            pVideoWindow_->SetWindowPosition(0, 0, rc.right, rc.bottom);
         }
     }
-    else if (playState == PLAY_STATE::Paused) {
-        // Pause previewing video data
-        if (playState_ != PLAY_STATE::Paused) {
-            hr = pVideoMediaControl_->Pause();
-            playState_ = playState;
-        }
-    }
-    else {
-        // Stop previewing video data
-        hr = pVideoMediaControl_->StopWhenReady();
-        playState_ = playState;
-    }
-
-    return hr;
 }
 
-int DShowCapture::ListVideoConfigures()
+int CCameraCapture::ListVideoConfigures()
 {
     int nConfigCount = 0;
 	if (pCaptureBuilder_ != NULL && pVideoFilter_ != NULL) {
@@ -275,7 +236,7 @@ int DShowCapture::ListVideoConfigures()
     return nConfigCount;
 }
 
-int DShowCapture::ListAudioConfigures()
+int CCameraCapture::ListAudioConfigures()
 {
     int nConfigCount = 0;
 	if (pCaptureBuilder_ != NULL && pAudioFilter_ != NULL) {
@@ -325,7 +286,7 @@ int DShowCapture::ListAudioConfigures()
 }
 
 // 枚举视频采集设备
-int DShowCapture::ListVideoDevices()
+int CCameraCapture::ListVideoDevices()
 {
     HRESULT hr;
 
@@ -386,14 +347,14 @@ int DShowCapture::ListVideoDevices()
                     // 绑定成功则添加到设备列表
                     videoDeviceList_.push_back(deviceName);
                     video_dev_count++;
-                    if (pVideoFilter != NULL) {
-                        pVideoFilter->Release();
-                    }
                 }
                 else {
                     CString text;
                     text.Format(_T("Video BindToObject Failed. index = %d\n"), video_dev_total);
                     OutputDebugString(text.GetBuffer());
+                }
+                if (pVideoFilter != NULL) {
+                    pVideoFilter->Release();
                 }
             }
             pPropBag->Release();
@@ -410,7 +371,7 @@ int DShowCapture::ListVideoDevices()
 }
 
 // 枚举音频采集设备
-int DShowCapture::ListAudioDevices()
+int CCameraCapture::ListAudioDevices()
 {
     HRESULT hr;
 
@@ -471,14 +432,14 @@ int DShowCapture::ListAudioDevices()
                     // 绑定成功则添加到设备列表
                     audioDeviceList_.push_back(deviceName);
                     audio_dev_count++;
-                    if (pAudioFilter != NULL) {
-                        pAudioFilter->Release();
-                    }
                 }
                 else {
                     CString text;
                     text.Format(_T("Audio BindToObject Failed. index = %d\n"), audio_dev_total);
                     OutputDebugString(text.GetBuffer());
+                }
+                if (pAudioFilter != NULL) {
+                    pAudioFilter->Release();
                 }
             }
             pPropBag->Release();
@@ -495,19 +456,19 @@ int DShowCapture::ListAudioDevices()
 }
 
 // 枚举视频压缩格式
-int DShowCapture::ListVideoCompressFormat()
+int CCameraCapture::ListVideoCompressFormat()
 {
     return 0;
 }
 
 // 枚举音频压缩格式
-int DShowCapture::ListAudioCompressFormat()
+int CCameraCapture::ListAudioCompressFormat()
 {
     return 0;
 }
 
 // 根据选择的设备获取 Video Capture Filter
-bool DShowCapture::CreateVideoFilter(const char * selectedDevice)
+bool CCameraCapture::CreateVideoFilter(const char * selectedDevice)
 {
     // 创建系统设备枚举
     ICreateDevEnum * pCreateDevEnum = NULL;
@@ -585,7 +546,7 @@ bool DShowCapture::CreateVideoFilter(const char * selectedDevice)
 }
 
 // 根据选择的设备获取 Audio Capture Filter
-bool DShowCapture::CreateAudioFilter(const char * selectedDevice)
+bool CCameraCapture::CreateAudioFilter(const char * selectedDevice)
 {
     // 创建系统设备枚举
     ICreateDevEnum * pCreateDevEnum = NULL;
@@ -663,7 +624,7 @@ bool DShowCapture::CreateAudioFilter(const char * selectedDevice)
 }
 
 // 渲染摄像头预览视频
-bool DShowCapture::Render(int mode, TCHAR * videoPath, const char * selectedDevice)
+bool CCameraCapture::Render(int mode, TCHAR * videoPath, const char * selectedDevice)
 {
     HRESULT hr;
 
@@ -728,7 +689,7 @@ bool DShowCapture::Render(int mode, TCHAR * videoPath, const char * selectedDevi
     return true;
 }
 
-HRESULT DShowCapture::HandleGraphEvent(void)
+HRESULT CCameraCapture::HandleGraphEvent(void)
 {
     LONG evCode = -1;
 	LONG_PTR evParam1 = NULL, evParam2 = NULL;
@@ -753,8 +714,49 @@ HRESULT DShowCapture::HandleGraphEvent(void)
     return hr;
 }
 
+HRESULT CCameraCapture::WindowStateChange(BOOL isShow)
+{
+    HRESULT hr;
+    if (isShow)
+        hr = ChangePreviewState(PLAY_STATE::Running);
+    else
+        hr = ChangePreviewState(PLAY_STATE::Stopped);
+    return hr;
+}
+
+HRESULT CCameraCapture::ChangePreviewState(PLAY_STATE playState /* = PLAY_STATE::Running */)
+{
+    HRESULT hr = E_FAIL;
+
+    // If the media control interface isn't ready, don't call it
+    if (!pVideoMediaControl_)
+        return E_FAIL;
+
+    if (playState == PLAY_STATE::Running) {
+        if (playState_ != PLAY_STATE::Running) {
+            // Start previewing video data
+            hr = pVideoMediaControl_->Run();
+            playState_ = playState;
+        }
+    }
+    else if (playState == PLAY_STATE::Paused) {
+        // Pause previewing video data
+        if (playState_ != PLAY_STATE::Paused) {
+            hr = pVideoMediaControl_->Pause();
+            playState_ = playState;
+        }
+    }
+    else {
+        // Stop previewing video data
+        hr = pVideoMediaControl_->StopWhenReady();
+        playState_ = playState;
+    }
+
+    return hr;
+}
+
 // 关闭摄像头
-bool DShowCapture::StopCurrentOperating(int action_type)
+bool CCameraCapture::StopCurrentOperating(int action_type)
 {
     if (pVideoMediaControl_->Stop() < 0)
         return false;
@@ -771,7 +773,7 @@ bool DShowCapture::StopCurrentOperating(int action_type)
 }
 
 // 暂停播放本地视频
-bool DShowCapture::PausePlayingLocalVideo()
+bool CCameraCapture::PausePlayingLocalVideo()
 {
     if (pVideoMediaControl_->Stop() < 0)
         return false;
@@ -780,7 +782,7 @@ bool DShowCapture::PausePlayingLocalVideo()
 }
 
 // 继续播放本地视频
-bool DShowCapture::ContinuePlayingLocalVideo()
+bool CCameraCapture::ContinuePlayingLocalVideo()
 {
     if (pVideoMediaControl_->Run() < 0)
         return false;

@@ -24,9 +24,6 @@
     <ClInclude Include="..\..\..\src\AVStreaming\AVStreamingDlg.h">
       <Filter>src</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\src\AVStreaming\DShowCapture.h">
-      <Filter>src</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\..\src\AVStreaming\Mtype.h">
       <Filter>src</Filter>
     </ClInclude>
@@ -42,10 +39,13 @@
     <ClInclude Include="..\..\..\src\AVStreaming\utils.h">
       <Filter>src</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\src\AVStreaming\CameraSettingDlg.h">
+    <ClInclude Include="..\..\..\src\AVStreaming\PreviewWnd.h">
       <Filter>src</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\src\AVStreaming\PreviewWnd.h">
+    <ClInclude Include="..\..\..\src\AVStreaming\CameraHostDlg.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\AVStreaming\CameraCapture.h">
       <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>
@@ -59,9 +59,6 @@
     <ClCompile Include="..\..\..\src\AVStreaming\AVStreamingDlg.cpp">
       <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\src\AVStreaming\DShowCapture.cpp">
-      <Filter>src</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\..\src\AVStreaming\Mtype.cpp">
       <Filter>src</Filter>
     </ClCompile>
@@ -71,7 +68,10 @@
     <ClCompile Include="..\..\..\src\AVStreaming\PreviewWnd.cpp">
       <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\src\AVStreaming\CameraSettingDlg.cpp">
+    <ClCompile Include="..\..\..\src\AVStreaming\CameraHostDlg.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\src\AVStreaming\CameraCapture.cpp">
       <Filter>src</Filter>
     </ClCompile>
   </ItemGroup>

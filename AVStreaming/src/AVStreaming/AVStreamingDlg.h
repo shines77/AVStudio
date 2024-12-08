@@ -7,8 +7,8 @@
 #include <AfxWin.h>
 #include <AfxDialogEx.h>
 
-#include "PreviewWnd.h"
-#include "CameraSettingDlg.h"
+class CPreviewWnd;
+class CCameraHostDlg;
 
 // CAVStreamingDlg ¶Ô»°¿ò
 class CAVStreamingDlg : public CDialogEx
@@ -43,6 +43,9 @@ protected:
     void SetScale(double scaleX, double scaleY);
 
 private:
-    CCameraSettingDlg * pCameraSettingDlg_;
     CPreviewWnd *       pPreviewWnd_;
+    CCameraHostDlg *    pCameraHostDlg_;
+    virtual LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam);
+public:
+    virtual BOOL PreTranslateMessage(MSG* pMsg);
 };

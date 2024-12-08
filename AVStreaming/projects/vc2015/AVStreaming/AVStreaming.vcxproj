@@ -216,19 +216,19 @@
   <ItemGroup>
     <ClInclude Include="..\..\..\src\AVStreaming\AVStreaming.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\AVStreamingDlg.h" />
-    <ClInclude Include="..\..\..\src\AVStreaming\CameraSettingDlg.h" />
+    <ClInclude Include="..\..\..\src\AVStreaming\CameraHostDlg.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\Mtype.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\PreviewWnd.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\Resource.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\stdafx.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\targetver.h" />
-    <ClInclude Include="..\..\..\src\AVStreaming\DShowCapture.h" />
+    <ClInclude Include="..\..\..\src\AVStreaming\CameraCapture.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\utils.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\..\src\AVStreaming\AVStreaming.cpp" />
     <ClCompile Include="..\..\..\src\AVStreaming\AVStreamingDlg.cpp" />
-    <ClCompile Include="..\..\..\src\AVStreaming\CameraSettingDlg.cpp" />
+    <ClCompile Include="..\..\..\src\AVStreaming\CameraHostDlg.cpp" />
     <ClCompile Include="..\..\..\src\AVStreaming\Mtype.cpp" />
     <ClCompile Include="..\..\..\src\AVStreaming\PreviewWnd.cpp" />
     <ClCompile Include="..\..\..\src\AVStreaming\stdafx.cpp">
@@ -237,7 +237,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\..\..\src\AVStreaming\DShowCapture.cpp" />
+    <ClCompile Include="..\..\..\src\AVStreaming\CameraCapture.cpp" />
     <ClCompile Include="..\..\..\src\AVStreaming\utils.cpp" />
   </ItemGroup>
   <ItemGroup>

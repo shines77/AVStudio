@@ -1,75 +1,83 @@
 //
-// CCameraSettingDlg.cpp : 实现文件
+// CCameraHostDlg.cpp : 实现文件
 //
 
 #include "stdafx.h"
 #include "AVStreaming.h"
-#include "CameraSettingDlg.h"
+#include "CameraHostDlg.h"
 
+#include "CameraCapture.h"
 #include "utils.h"
 
-// CCameraSettingDlg 对话框
+// CCameraHostDlg 对话框
 
-IMPLEMENT_DYNAMIC(CCameraSettingDlg, CDialogEx)
+IMPLEMENT_DYNAMIC(CCameraHostDlg, CDialogEx)
 
-CCameraSettingDlg::CCameraSettingDlg(CWnd * pParent /*=NULL*/)
+CCameraHostDlg::CCameraHostDlg(CWnd * pParent /*=NULL*/)
 	: CDialogEx(IDD_CAMERA_SETTING_DLG, pParent)
 {
     hwndPreview_ = NULL;
-    pDShowCapture_ = NULL;
+    pCameraCapture_ = NULL;
 }
 
-CCameraSettingDlg::~CCameraSettingDlg()
+CCameraHostDlg::~CCameraHostDlg()
 {
-    SAFE_OBJECT_DELETE(pDShowCapture_);
+    SAFE_OBJECT_DELETE(pCameraCapture_);
 }
 
-void CCameraSettingDlg::DoDataExchange(CDataExchange * pDX)
+void CCameraHostDlg::DoDataExchange(CDataExchange * pDX)
 {
 	CDialogEx::DoDataExchange(pDX);
     DDX_Control(pDX, IDC_VIDEO_DEVICE_LIST, cbxVideoDeviceList_);
     DDX_Control(pDX, IDC_AUDIO_DEVICE_LIST, cbxAudioDeviceList_);
 }
 
-BEGIN_MESSAGE_MAP(CCameraSettingDlg, CDialogEx)
-    ON_CBN_SELCHANGE(IDC_VIDEO_DEVICE_LIST, &CCameraSettingDlg::OnCbnSelChangeVideoDeviceList)
-    ON_CBN_SELCHANGE(IDC_AUDIO_DEVICE_LIST, &CCameraSettingDlg::OnCbnSelChangeAudioDeviceList)
+BEGIN_MESSAGE_MAP(CCameraHostDlg, CDialogEx)
+    ON_CBN_SELCHANGE(IDC_VIDEO_DEVICE_LIST, &CCameraHostDlg::OnCbnSelChangeVideoDeviceList)
+    ON_CBN_SELCHANGE(IDC_AUDIO_DEVICE_LIST, &CCameraHostDlg::OnCbnSelChangeAudioDeviceList)
     ON_WM_CREATE()
 END_MESSAGE_MAP()
 
-HWND CCameraSettingDlg::GetPreviewHwnd() const
+CCameraCapture * CCameraHostDlg::GetSafeCapture() const {
+    if (pCameraCapture_ != NULL && pCameraCapture_->GetPreviewHwnd() != NULL)
+        return pCameraCapture_;
+    else
+        return NULL;
+}
+
+HWND CCameraHostDlg::GetPreviewHwnd() const
 {
-    if (pDShowCapture_ != NULL) {
-        return pDShowCapture_->GetPreviewHwnd();
+    if (pCameraCapture_ != NULL)
+        return pCameraCapture_->GetPreviewHwnd();
+    else
+        return NULL;
+}
+
+HWND CCameraHostDlg::SetPreviewHwnd(HWND hwndPreview, bool bAttachTo /* = false */)
+{
+    if (pCameraCapture_ != NULL) {
+        return pCameraCapture_->SetPreviewHwnd(hwndPreview, bAttachTo);
     }
     return NULL;
 }
 
-HWND CCameraSettingDlg::SetPreviewHwnd(HWND hwndPreview, bool bAttachTo /* = false */)
-{
-    if (pDShowCapture_ != NULL) {
-        return pDShowCapture_->SetPreviewHwnd(hwndPreview, bAttachTo);
-    }
-    return NULL;
-}
+// CCameraHostDlg 消息处理程序
 
-// CCameraSettingDlg 消息处理程序
-
-BOOL CCameraSettingDlg::Create(UINT nIDTemplate, HWND previewHwnd, CWnd* pParentWnd /*= NULL*/)
+BOOL CCameraHostDlg::Create(UINT nIDTemplate, HWND previewHwnd, CWnd * pParentWnd /*= NULL*/)
 {
-	if (pDShowCapture_ == NULL) {
-        pDShowCapture_ = new DShowCapture;
-        if (pDShowCapture_ != NULL) {
-            pDShowCapture_->CreateInterfaces();
+	if (pCameraCapture_ == NULL) {
+        pCameraCapture_ = new CCameraCapture;
+        if (pCameraCapture_ != NULL) {
+            pCameraCapture_->CreateInterfaces();
             if (previewHwnd != NULL) {
-                pDShowCapture_->SetPreviewHwnd(previewHwnd);
+                pCameraCapture_->SetPreviewHwnd(previewHwnd);
             }
         }
     }
     return CDialogEx::Create(nIDTemplate, pParentWnd);
 }
 
-int CCameraSettingDlg::OnCreate(LPCREATESTRUCT lpCreateStruct)
+int CCameraHostDlg::OnCreate(LPCREATESTRUCT lpCreateStruct)
 {
     if (CDialogEx::OnCreate(lpCreateStruct) == -1)
         return -1;
@@ -77,36 +85,36 @@ int CCameraSettingDlg::OnCreate(LPCREATESTRUCT lpCreateStruct)
     return 0;
 }
 
-BOOL CCameraSettingDlg::OnInitDialog()
+BOOL CCameraHostDlg::OnInitDialog()
 {
 	CDialogEx::OnInitDialog();
 
     UpdateData(FALSE);
 
-    if (pDShowCapture_ != NULL) {
+    if (pCameraCapture_ != NULL) {
         EnumVideoDeviceList();
         EnumAudioDeviceList();
 
-        pDShowCapture_->ListVideoConfigures();
-        pDShowCapture_->ListAudioConfigures();
+        pCameraCapture_->ListVideoConfigures();
+        pCameraCapture_->ListAudioConfigures();
     }
 
 	return TRUE;  // 除非将焦点设置到控件，否则返回 TRUE
 }
 
-int CCameraSettingDlg::EnumVideoDeviceList()
+int CCameraHostDlg::EnumVideoDeviceList()
 {
     int nDeviceCount = 0;
     int default_selected = -1;
     std::string selected_device;
 
-    if (pDShowCapture_ != NULL) {
-        nDeviceCount = pDShowCapture_->ListVideoDevices();
+    if (pCameraCapture_ != NULL) {
+        nDeviceCount = pCameraCapture_->ListVideoDevices();
         if (nDeviceCount > 0) {
             cbxVideoDeviceList_.Clear();
         }
         for (int i = 0; i < nDeviceCount; i++) {
-            const std::string & deviceName = pDShowCapture_->videoDeviceList_[i];
+            const std::string & deviceName = pCameraCapture_->videoDeviceList_[i];
             std::tstring deviceNameW = Ansi2Unicode(deviceName);
             if (deviceName == "HD WebCam") {
                 default_selected = i;
@@ -125,18 +133,18 @@ int CCameraSettingDlg::EnumVideoDeviceList()
     return nDeviceCount;
 }
 
-int CCameraSettingDlg::EnumAudioDeviceList()
+int CCameraHostDlg::EnumAudioDeviceList()
 {
     int nDeviceCount = 0;
     int default_selected = -1;
 
-    if (pDShowCapture_ != NULL) {
-        nDeviceCount = pDShowCapture_->ListAudioDevices();
+    if (pCameraCapture_ != NULL) {
+        nDeviceCount = pCameraCapture_->ListAudioDevices();
         if (nDeviceCount > 0) {
             cbxAudioDeviceList_.Clear();
         }
         for (int i = 0; i < nDeviceCount; i++) {
-            const std::string & deviceName = pDShowCapture_->audioDeviceList_[i];
+            const std::string & deviceName = pCameraCapture_->audioDeviceList_[i];
             std::tstring deviceNameW = Ansi2Unicode(deviceName);             
             cbxAudioDeviceList_.AddString(deviceNameW.c_str());
         }
@@ -151,7 +159,7 @@ int CCameraSettingDlg::EnumAudioDeviceList()
     return nDeviceCount;
 }
 
-void CCameraSettingDlg::OnCbnSelChangeVideoDeviceList()
+void CCameraHostDlg::OnCbnSelChangeVideoDeviceList()
 {
     int selected_idx = cbxVideoDeviceList_.GetCurSel();
     if (selected_idx < 0)
@@ -165,12 +173,12 @@ void CCameraSettingDlg::OnCbnSelChangeVideoDeviceList()
     }
     std::string selectedDevice = Unicode2Ansi(deviceNameW);
 
-    if (pDShowCapture_ != NULL) {
-        bool result = pDShowCapture_->Render(MODE_PREVIEW_VIDEO, NULL, selectedDevice.c_str());
+    if (pCameraCapture_ != NULL) {
+        bool result = pCameraCapture_->Render(MODE_PREVIEW_VIDEO, NULL, selectedDevice.c_str());
     }
 }
 
-void CCameraSettingDlg::OnCbnSelChangeAudioDeviceList()
+void CCameraHostDlg::OnCbnSelChangeAudioDeviceList()
 {
     int selected_idx = cbxAudioDeviceList_.GetCurSel();
     if (selected_idx < 0)
@@ -184,43 +192,42 @@ void CCameraSettingDlg::OnCbnSelChangeAudioDeviceList()
     }
 
     std::string selectedDevice = Unicode2Ansi(deviceNameW);
-    if (pDShowCapture_ != NULL) {
-        bool result = pDShowCapture_->CreateAudioFilter(selectedDevice.c_str());
+    if (pCameraCapture_ != NULL) {
+        bool result = pCameraCapture_->CreateAudioFilter(selectedDevice.c_str());
     }
 }
 
-LRESULT CCameraSettingDlg::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
+BOOL CCameraHostDlg::PreTranslateMessage(MSG * pMsg)
+{
+    if (pMsg->message == WM_KEYDOWN) {
+        if (pMsg->wParam == VK_ESCAPE) {
+            // 按下 ESC 键时不做任何处理
+            return TRUE; // 返回 TRUE 表示消息已被处理
+        }
+    }
+    return CDialogEx::PreTranslateMessage(pMsg);
+}
+
+LRESULT CCameraHostDlg::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
     {
         case WM_GRAPH_NOTIFY:
-            if (pDShowCapture_ != NULL) {
-                pDShowCapture_->HandleGraphEvent();
-            }
-            break;
-
-        case WM_SIZE:
-            if (pDShowCapture_ != NULL) {
-                pDShowCapture_->ResizeVideoWindow();
-            }
-            break;
-
-        case WM_WINDOWPOSCHANGED:
-            if (pDShowCapture_ != NULL) {
-                pDShowCapture_->WindowStateChange(!this->IsIconic());
+            if (pCameraCapture_ != NULL) {
+                pCameraCapture_->HandleGraphEvent();
             }
             break;
 
         case WM_CLOSE:
             // Hide the main window while the graph is destroyed
-            if (pDShowCapture_ != NULL) {
-                HWND hwndPreview = pDShowCapture_->GetPreviewHwnd();
+            if (pCameraCapture_ != NULL) {
+                HWND hwndPreview = pCameraCapture_->GetPreviewHwnd();
                 if (hwndPreview != NULL && ::IsWindow(hwndPreview)) {
                     ::ShowWindow(hwndPreview, SW_HIDE);
                 }
+                // Stop capturing and release interfaces
+                pCameraCapture_->StopAndReleaseInterfaces();
             }
-            // Stop capturing and release interfaces
-            pDShowCapture_->StopAndReleaseInterfaces();
             break;
 
         case WM_DESTROY:
@@ -229,17 +236,11 @@ LRESULT CCameraSettingDlg::WindowProc(UINT message, WPARAM wParam, LPARAM lParam
     }
 
     // Pass this message to the video window for notification of system changes
-    if (pDShowCapture_ != NULL) {
-        IVideoWindow * pVideoWindow = pDShowCapture_->GetVideoWindow();
+    if (pCameraCapture_ != NULL) {
+        IVideoWindow * pVideoWindow = pCameraCapture_->GetVideoWindow();
         if (pVideoWindow != NULL) {
             pVideoWindow->NotifyOwnerMessage((LONG_PTR)this->GetSafeHwnd(), message, wParam, lParam);
         }
     }
     return CDialogEx::WindowProc(message, wParam, lParam);
-}
-
-BOOL CCameraSettingDlg::PreTranslateMessage(MSG * pMsg)
-{
-
-    return CDialogEx::PreTranslateMessage(pMsg);
 }

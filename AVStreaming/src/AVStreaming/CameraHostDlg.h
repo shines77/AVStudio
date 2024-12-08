@@ -1,5 +1,5 @@
 //
-// CCameraSettingDlg.h : 头文件
+// CCameraHostDlg.h : 头文件
 //
 
 #pragma once
@@ -7,27 +7,29 @@
 #include <AfxWin.h>
 #include <AfxDialogEx.h>
 
-#include "DShowCapture.h"
+// CCameraHostDlg 对话框
 
-// CVideoSettingDlg 对话框
+class CCameraCapture;
 
-class CCameraSettingDlg : public CDialogEx
+class CCameraHostDlg : public CDialogEx
 {
-	DECLARE_DYNAMIC(CCameraSettingDlg)
+	DECLARE_DYNAMIC(CCameraHostDlg)
 
 public:
-	CCameraSettingDlg(CWnd * pParent = NULL);   // 标准构造函数
-	virtual ~CCameraSettingDlg();
+	CCameraHostDlg(CWnd * pParent = NULL);   // 标准构造函数
+	virtual ~CCameraHostDlg();
 
 // 对话框数据
 #ifdef AFX_DESIGN_TIME
 	enum { IDD = IDD_CAMERA_SETTING_DLG };
 #endif
 
-    BOOL Create(UINT nIDTemplate, HWND previewHwnd, CWnd* pParentWnd = NULL);
+    BOOL Create(UINT nIDTemplate, HWND previewHwnd, CWnd * pParentWnd = NULL);
 
     HWND GetPreviewHwnd() const;
     HWND SetPreviewHwnd(HWND hwndPreview, bool bAttachTo = false);
+
+    CCameraCapture * GetSafeCapture() const;
 
 protected:
     virtual BOOL OnInitDialog();
@@ -44,8 +46,8 @@ protected:
     int EnumAudioDeviceList();
 
 private:
-    HWND            hwndPreview_;
-    DShowCapture *  pDShowCapture_;
+    HWND             hwndPreview_;
+    CCameraCapture * pCameraCapture_;
 
     CComboBox   cbxVideoDeviceList_;
     CComboBox   cbxAudioDeviceList_;       
