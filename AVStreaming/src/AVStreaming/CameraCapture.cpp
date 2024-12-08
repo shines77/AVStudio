@@ -165,6 +165,13 @@ bool CCameraCapture::AttachToVideoWindow(HWND hwndPreview)
         hr = pVideoWindow_->put_Visible(OATRUE);
         if (FAILED(hr))
             return false;
+
+        // Start receiving events
+        if (pVideoMediaEvent_ != NULL) {
+            hr = pVideoMediaEvent_->SetNotifyWindow((OAHWND)hwndPreview, WM_GRAPH_NOTIFY, 0);
+            if (FAILED(hr))
+                return false;
+        }
     }
 
     return true;

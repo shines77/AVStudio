@@ -70,18 +70,51 @@ void CPreviewWnd::OnSize(UINT nType, int cx, int cy)
 {
     CWnd::OnSize(nType, cx, cy);
 
-    CCameraCapture * pCameraCapture = GetSafeCapture();
-    if (pCameraCapture != NULL) {
-        pCameraCapture->ResizeVideoWindow();
-    }
+    // TODO:
 }
 
 void CPreviewWnd::OnWindowPosChanged(WINDOWPOS* lpwndpos)
 {
     CWnd::OnWindowPosChanged(lpwndpos);
 
-    CCameraCapture * pCameraCapture = GetSafeCapture();
-    if (pCameraCapture != NULL) {
-        pCameraCapture->WindowStateChange(!this->IsIconic());
+    // TODO:
+}
+
+LRESULT CPreviewWnd::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
+{
+    CCameraCapture * pCameraCapture = NULL;
+    switch (message)
+    {
+        case WM_GRAPH_NOTIFY:
+            pCameraCapture = GetSafeCapture();
+            if (pCameraCapture != NULL) {
+                pCameraCapture->HandleGraphEvent();
+            }
+            break;
+
+        case WM_SIZE:
+            pCameraCapture = GetSafeCapture();
+            if (pCameraCapture != NULL) {
+                pCameraCapture->ResizeVideoWindow();
+            }
+            break;
+
+        case WM_WINDOWPOSCHANGED:
+            pCameraCapture = GetSafeCapture();
+            if (pCameraCapture != NULL) {
+                pCameraCapture->WindowStateChange(!this->IsIconic());
+            }
+            break;
     }
+
+    // Pass this message to the video window for notification of system changes
+    pCameraCapture = GetSafeCapture();
+    if (pCameraCapture != NULL) {
+        IVideoWindow * pVideoWindow = pCameraCapture->GetVideoWindow();
+        if (pVideoWindow != NULL) {
+            pVideoWindow->NotifyOwnerMessage((LONG_PTR)this->GetSafeHwnd(), message, wParam, lParam);
+        }
+    }
+
+    return CWnd::WindowProc(message, wParam, lParam);
 }

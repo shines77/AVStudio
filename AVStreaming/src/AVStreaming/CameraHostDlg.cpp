@@ -199,12 +199,6 @@ LRESULT CCameraHostDlg::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
     {
-        case WM_GRAPH_NOTIFY:
-            if (pCameraCapture_ != NULL) {
-                pCameraCapture_->HandleGraphEvent();
-            }
-            break;
-
         case WM_CLOSE:
             // Hide the main window while the graph is destroyed
             if (pCameraCapture_ != NULL) {
@@ -216,18 +210,7 @@ LRESULT CCameraHostDlg::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
                 pCameraCapture_->StopAndReleaseInterfaces();
             }
             break;
-
-        case WM_DESTROY:
-            ::PostQuitMessage(0);
-            return 0;
     }
 
-    // Pass this message to the video window for notification of system changes
-    if (pCameraCapture_ != NULL) {
-        IVideoWindow * pVideoWindow = pCameraCapture_->GetVideoWindow();
-        if (pVideoWindow != NULL) {
-            pVideoWindow->NotifyOwnerMessage((LONG_PTR)this->GetSafeHwnd(), message, wParam, lParam);
-        }
-    }
     return CDialogEx::WindowProc(message, wParam, lParam);
 }
