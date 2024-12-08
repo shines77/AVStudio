@@ -339,10 +339,10 @@ int CCameraCapture::ListVideoDevices()
             VARIANT var;
             var.vt = VT_BSTR;
             hr = pPropBag->Read(L"Description", &var, NULL);
-            if (FAILED(hr)) {
+            if (hr != NOERROR) {
                 hr = pPropBag->Read(L"FriendlyName", &var, NULL);
             }
-            if (SUCCEEDED(hr)) {
+            if (hr == NOERROR) {
                 char deviceName[256] = { '\0' };
                 // 获取设备名称
                 WideCharToMultiByte(CP_ACP, 0, var.bstrVal, -1, deviceName, sizeof(deviceName), "", NULL);
@@ -424,10 +424,10 @@ int CCameraCapture::ListAudioDevices()
             VARIANT var;
             var.vt = VT_BSTR;
             hr = pPropBag->Read(L"Description", &var, NULL);
-            if (FAILED(hr)) {
+            if (hr != NOERROR) {
                 hr = pPropBag->Read(L"FriendlyName", &var, NULL);
             }
-            if (SUCCEEDED(hr)) {
+            if (hr == NOERROR) {
                 char deviceName[256] = { '\0' };
                 // 获取设备名称
                 WideCharToMultiByte(CP_ACP, 0, var.bstrVal, -1, deviceName, sizeof(deviceName), "", NULL);
@@ -475,8 +475,11 @@ int CCameraCapture::ListAudioCompressFormat()
 }
 
 // 根据选择的设备获取 Video Capture Filter
-bool CCameraCapture::CreateVideoFilter(const char * selectedDevice)
+bool CCameraCapture::CreateVideoFilter(const char * videoDevice)
 {
+    if (videoDevice == NULL)
+        return false;
+
     // 创建系统设备枚举
     ICreateDevEnum * pCreateDevEnum = NULL;
     HRESULT hr = CoCreateInstance(CLSID_SystemDeviceEnum, NULL, CLSCTX_INPROC_SERVER, IID_ICreateDevEnum, (void**)&pCreateDevEnum);
@@ -518,15 +521,15 @@ bool CCameraCapture::CreateVideoFilter(const char * selectedDevice)
             VARIANT var;
             var.vt = VT_BSTR;
             hr = pPropBag->Read(L"Description", &var, NULL);
-            if (FAILED(hr)) {
+            if (hr != NOERROR) {
                 hr = pPropBag->Read(L"FriendlyName", &var, NULL);
             }
-            if (SUCCEEDED(hr)) {
+            if (hr == NOERROR) {
                 char deviceName[256] = { '\0' };
                 // 获取设备名称
                 WideCharToMultiByte(CP_ACP, 0, var.bstrVal, -1, deviceName, sizeof(deviceName), "", NULL);
                 SysFreeString(var.bstrVal);
-                if (selectedDevice != NULL && strcmp(selectedDevice, deviceName) == 0) {
+                if (videoDevice != NULL && strcmp(videoDevice, deviceName) == 0) {
                     SAFE_COM_RELEASE(pVideoFilter_);
                     // 尝试用当前设备绑定到 video filter
                     hr = pMoniker->BindToObject(0, 0, IID_IBaseFilter, (void **)&pVideoFilter_);
@@ -553,8 +556,11 @@ bool CCameraCapture::CreateVideoFilter(const char * selectedDevice)
 }
 
 // 根据选择的设备获取 Audio Capture Filter
-bool CCameraCapture::CreateAudioFilter(const char * selectedDevice)
+bool CCameraCapture::CreateAudioFilter(const char * audioDevice)
 {
+    if (audioDevice == NULL)
+        return false;
+
     // 创建系统设备枚举
     ICreateDevEnum * pCreateDevEnum = NULL;
     HRESULT hr = CoCreateInstance(CLSID_SystemDeviceEnum, NULL, CLSCTX_INPROC_SERVER, IID_ICreateDevEnum, (void**)&pCreateDevEnum);
@@ -596,15 +602,15 @@ bool CCameraCapture::CreateAudioFilter(const char * selectedDevice)
             VARIANT var;
             var.vt = VT_BSTR;
             hr = pPropBag->Read(L"Description", &var, NULL);
-            if (FAILED(hr)) {
+            if (hr != NOERROR) {
                 hr = pPropBag->Read(L"FriendlyName", &var, NULL);
             }
-            if (SUCCEEDED(hr)) {
+            if (hr == NOERROR) {
                 char deviceName[256] = { '\0' };
                 // 获取设备名称
                 WideCharToMultiByte(CP_ACP, 0, var.bstrVal, -1, deviceName, sizeof(deviceName), "", NULL);
                 SysFreeString(var.bstrVal);
-                if (selectedDevice != NULL && strcmp(selectedDevice, deviceName) == 0) {
+                if (audioDevice != NULL && strcmp(audioDevice, deviceName) == 0) {
                     SAFE_COM_RELEASE(pAudioFilter_);
                     // 尝试用当前设备绑定到 audio filter
                     hr = pMoniker->BindToObject(0, 0, IID_IBaseFilter, (void **)&pAudioFilter_);
@@ -631,9 +637,15 @@ bool CCameraCapture::CreateAudioFilter(const char * selectedDevice)
 }
 
 // 渲染摄像头预览视频
-bool CCameraCapture::Render(int mode, TCHAR * videoPath, const char * selectedDevice)
+bool CCameraCapture::Render(int mode, TCHAR * videoPath,
+                            const char * videoDevice,
+                            const char * audioDevice)
 {
     HRESULT hr;
+
+    // 检查 Video capture Builder
+    if (pCaptureBuilder_ == NULL)
+        return false;
 
     // 检查 Video filter graph (管理器)
     if (pFilterGraph_ == NULL)
@@ -641,17 +653,23 @@ bool CCameraCapture::Render(int mode, TCHAR * videoPath, const char * selectedDe
 
     if (mode != MODE_LOCAL_VIDEO) {
         // 创建 Video filter
-        bool result = CreateVideoFilter(selectedDevice);
+        bool result = CreateVideoFilter(videoDevice);
         if (!result)
             return false;
 
-        // 检查 Video capture graph (管理器)
-        if (pCaptureBuilder_ == NULL)
-            return false;
-
-        // 将获取到的 Video filter 加入 Video filter graph
+        // 将 Video filter 加入 filter graph
         if (hr = pFilterGraph_->AddFilter(pVideoFilter_, L"Video Filter"), FAILED(hr))
             return false;
+
+        if (mode == MODE_RECORD_VIDEO) {
+            // 创建 Audio filter
+            result = CreateAudioFilter(audioDevice);
+            if (result) {
+                // 将 Audio filter 加入 filter graph
+                if (hr = pFilterGraph_->AddFilter(pAudioFilter_, L"Audio Filter"), FAILED(hr))
+                    return false;
+            }
+        }
     }
 
     if (mode == MODE_PREVIEW_VIDEO) {     // 预览视频
@@ -672,8 +690,15 @@ bool CCameraCapture::Render(int mode, TCHAR * videoPath, const char * selectedDe
             return false;
 
         // 视频流写入 avi 文件
-        if (pVideoMux_ != NULL && pCaptureBuilder_->RenderStream(&PIN_CATEGORY_CAPTURE, &MEDIATYPE_Video, pVideoFilter_, NULL, pVideoMux_) < 0)
-            return false;
+        if (pVideoMux_ != NULL) {
+            if (pCaptureBuilder_->RenderStream(&PIN_CATEGORY_CAPTURE, &MEDIATYPE_Video, pVideoFilter_, NULL, pVideoMux_) < 0)
+                return false;
+
+            if (pAudioFilter_ != NULL) {
+                if (pCaptureBuilder_->RenderStream(&PIN_CATEGORY_CAPTURE, &MEDIATYPE_Audio, pAudioFilter_, NULL, pVideoMux_) < 0)
+                    return false;
+            }
+        }
     }
     else if (mode == MODE_LOCAL_VIDEO) {   // 播放本地视频
         USES_CONVERSION;

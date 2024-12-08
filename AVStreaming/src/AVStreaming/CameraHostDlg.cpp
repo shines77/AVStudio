@@ -14,7 +14,7 @@
 IMPLEMENT_DYNAMIC(CCameraHostDlg, CDialogEx)
 
 CCameraHostDlg::CCameraHostDlg(CWnd * pParent /*=NULL*/)
-	: CDialogEx(IDD_CAMERA_SETTING_DLG, pParent)
+	: CDialogEx(IDD_CAMERA_HOST_DLG, pParent)
 {
     hwndPreview_ = NULL;
     pCameraCapture_ = NULL;
@@ -27,15 +27,18 @@ CCameraHostDlg::~CCameraHostDlg()
 
 void CCameraHostDlg::DoDataExchange(CDataExchange * pDX)
 {
-	CDialogEx::DoDataExchange(pDX);
+    CDialogEx::DoDataExchange(pDX);
     DDX_Control(pDX, IDC_VIDEO_DEVICE_LIST, cbxVideoDeviceList_);
     DDX_Control(pDX, IDC_AUDIO_DEVICE_LIST, cbxAudioDeviceList_);
+    DDX_Control(pDX, IDC_CHECK_SAVE_TO_AVI, cbxSaveToAviFile_);
 }
 
 BEGIN_MESSAGE_MAP(CCameraHostDlg, CDialogEx)
     ON_CBN_SELCHANGE(IDC_VIDEO_DEVICE_LIST, &CCameraHostDlg::OnCbnSelChangeVideoDeviceList)
     ON_CBN_SELCHANGE(IDC_AUDIO_DEVICE_LIST, &CCameraHostDlg::OnCbnSelChangeAudioDeviceList)
     ON_WM_CREATE()
+    ON_BN_CLICKED(IDC_BTN_START_CAPTURE, &CCameraHostDlg::OnClickedBtnStartCapture)
+    ON_BN_CLICKED(IDC_BTN_STOP_CAPTURE, &CCameraHostDlg::OnClickedBtnStopCapture)
 END_MESSAGE_MAP()
 
 CCameraCapture * CCameraHostDlg::GetSafeCapture() const {
@@ -140,48 +143,85 @@ int CCameraHostDlg::EnumAudioDeviceList()
     return nDeviceCount;
 }
 
-void CCameraHostDlg::OnCbnSelChangeVideoDeviceList()
+std::string CCameraHostDlg::GetSelectedVideoDevice() const
 {
+    std::string deviceName;
     if (cbxVideoDeviceList_.GetCount() <= 0)
-        return;
+        return deviceName;
 
     int selected_idx = cbxVideoDeviceList_.GetCurSel();
     if (selected_idx < 0)
-        return;
+        return deviceName;
 
     CString name;
     cbxVideoDeviceList_.GetWindowText(name);
     std::tstring deviceNameW = name.GetBuffer();
-    if (deviceNameW.empty()) {
-        return;
+    if (!deviceNameW.empty()) {
+        deviceName = Unicode2Ansi(deviceNameW);
     }
-    std::string selectedDevice = Unicode2Ansi(deviceNameW);
-
-    if (pCameraCapture_ != NULL) {
-        bool result = pCameraCapture_->Render(MODE_PREVIEW_VIDEO, NULL, selectedDevice.c_str());
-    }
+    return deviceName;
 }
 
-void CCameraHostDlg::OnCbnSelChangeAudioDeviceList()
+std::string CCameraHostDlg::GetSelectedAudioDevice() const
 {
+    std::string deviceName;
     if (cbxAudioDeviceList_.GetCount() <= 0)
-        return;
+        return deviceName;
 
     int selected_idx = cbxAudioDeviceList_.GetCurSel();
     if (selected_idx < 0)
-        return;
+        return deviceName;
 
     CString name;
     cbxAudioDeviceList_.GetWindowText(name);
     std::tstring deviceNameW = name.GetBuffer();
-    if (deviceNameW.empty()) {
-        return;
-    }
+    if (!deviceNameW.empty()) {
+        deviceName = Unicode2Ansi(deviceNameW);
+    }    
+    return deviceName;
+}
 
-    std::string selectedDevice = Unicode2Ansi(deviceNameW);
+bool CCameraHostDlg::StartCapture()
+{
     if (pCameraCapture_ != NULL) {
-        bool result = pCameraCapture_->CreateAudioFilter(selectedDevice.c_str());
+        std::string videoDevice = GetSelectedVideoDevice();
+        std::string audioDevice = GetSelectedAudioDevice();
+        if (videoDevice != selectedVideoDevice_ && audioDevice != selectedAudioDevice_) {
+            bool result = pCameraCapture_->Render(MODE_PREVIEW_VIDEO, NULL,
+                                                  videoDevice.c_str(), audioDevice.c_str());
+            if (videoDevice != selectedVideoDevice_)
+                selectedVideoDevice_ = videoDevice;
+            if (audioDevice != selectedAudioDevice_)
+                selectedAudioDevice_ = audioDevice;
+        }
+        return true;
     }
+    return false;
+}
+
+bool CCameraHostDlg::StopCapture()
+{
+    return true;
+}
+
+void CCameraHostDlg::OnCbnSelChangeVideoDeviceList()
+{
+    StartCapture();
+}
+
+void CCameraHostDlg::OnCbnSelChangeAudioDeviceList()
+{
+    StartCapture();
+}
+
+void CCameraHostDlg::OnClickedBtnStartCapture()
+{
+    StartCapture();
+}
+
+void CCameraHostDlg::OnClickedBtnStopCapture()
+{
+    StopCapture();
 }
 
 BOOL CCameraHostDlg::PreTranslateMessage(MSG * pMsg)

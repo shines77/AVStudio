@@ -171,11 +171,11 @@ BOOL CAVStreamingDlg::OnInitDialog()
         CCameraHostDlg * pCameraHostDlg = new CCameraHostDlg;
         if (pCameraHostDlg != NULL) {
             if (pPreviewWnd_ != NULL && pPreviewWnd_->GetSafeHwnd()) {
-                pCameraHostDlg->Create(IDD_CAMERA_SETTING_DLG, pPreviewWnd_->GetSafeHwnd(), this);
+                pCameraHostDlg->Create(IDD_CAMERA_HOST_DLG, pPreviewWnd_->GetSafeHwnd(), this);
                 pPreviewWnd_->SetHostWnd(pCameraHostDlg);
             }
             else {
-                pCameraHostDlg->Create(IDD_CAMERA_SETTING_DLG, NULL, this);
+                pCameraHostDlg->Create(IDD_CAMERA_HOST_DLG, NULL, this);
             }
         
             pCameraHostDlg->ShowWindow(SW_SHOWNORMAL);

@@ -157,13 +157,14 @@ public:
     int ListAudioCompressFormat();
 
     // 根据选择的设备创建 Video Capture Filter
-    bool CreateVideoFilter(const char * selectedDevice = NULL);
+    bool CreateVideoFilter(const char * videoDevice = NULL);
     // 根据选择的设备创建 Audio Capture Filter
-    bool CreateAudioFilter(const char * selectedDevice = NULL);
+    bool CreateAudioFilter(const char * audioDevice = NULL);
 
     // 渲染预览窗口
     bool Render(int mode, TCHAR * videoPath = NULL,
-                const char * selectedDevice = NULL);
+                const char * videoDevice = NULL,
+                const char * audioDevice = NULL);
 
     // 停止当前操作
     bool StopCurrentOperating(int _stop_type = 0);

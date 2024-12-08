@@ -7,6 +7,8 @@
 #include <AfxWin.h>
 #include <AfxDialogEx.h>
 
+#include <string>
+
 // CCameraHostDlg 对话框
 
 class CCameraCapture;
@@ -21,7 +23,7 @@ public:
 
 // 对话框数据
 #ifdef AFX_DESIGN_TIME
-	enum { IDD = IDD_CAMERA_SETTING_DLG };
+	enum { IDD = IDD_CAMERA_HOST_DLG };
 #endif
 
     BOOL Create(UINT nIDTemplate, HWND previewHwnd, CWnd * pParentWnd = NULL);
@@ -31,6 +33,12 @@ public:
 
     CCameraCapture * GetSafeCapture() const;
 
+    bool StartCapture();
+    bool StopCapture();
+
+    std::string GetSelectedVideoDevice() const;
+    std::string GetSelectedAudioDevice() const;
+
 protected:
     virtual BOOL OnInitDialog();
 	virtual void DoDataExchange(CDataExchange * pDX);    // DDX/DDV 支持
@@ -39,6 +47,8 @@ protected:
     afx_msg void OnCbnSelChangeAudioDeviceList();
     virtual BOOL PreTranslateMessage(MSG * pMsg);
     virtual LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam);
+    afx_msg void OnClickedBtnStartCapture();
+    afx_msg void OnClickedBtnStopCapture();
 	DECLARE_MESSAGE_MAP()
 
 protected:
@@ -49,6 +59,10 @@ private:
     HWND             hwndPreview_;
     CCameraCapture * pCameraCapture_;
 
+    std::string selectedVideoDevice_;
+    std::string selectedAudioDevice_;
+
     CComboBox   cbxVideoDeviceList_;
     CComboBox   cbxAudioDeviceList_;       
+    CButton     cbxSaveToAviFile_;
 };
