@@ -105,62 +105,46 @@ BOOL CCameraHostDlg::OnInitDialog()
 int CCameraHostDlg::EnumVideoDeviceList()
 {
     int nDeviceCount = 0;
-    int default_selected = -1;
-    std::string selected_device;
-
     if (pCameraCapture_ != NULL) {
         nDeviceCount = pCameraCapture_->ListVideoDevices();
+        cbxVideoDeviceList_.Clear();
         if (nDeviceCount > 0) {
-            cbxVideoDeviceList_.Clear();
-        }
-        for (int i = 0; i < nDeviceCount; i++) {
-            const std::string & deviceName = pCameraCapture_->videoDeviceList_[i];
-            std::tstring deviceNameW = Ansi2Unicode(deviceName);
-            if (deviceName == "HD WebCam") {
-                default_selected = i;
-                selected_device = deviceName;
-            }               
-            cbxVideoDeviceList_.AddString(deviceNameW.c_str());
+            for (int i = 0; i < nDeviceCount; i++) {
+                const std::string & deviceName = pCameraCapture_->videoDeviceList_[i];
+                std::tstring deviceNameW = Ansi2Unicode(deviceName);              
+                cbxVideoDeviceList_.AddString(deviceNameW.c_str());
+            }
+            cbxVideoDeviceList_.SetCurSel(0);
+            OnCbnSelChangeVideoDeviceList();
         }
     }
-
-    if (default_selected == -1)
-        default_selected = 0;
-
-    cbxVideoDeviceList_.SetCurSel(default_selected);
-    OnCbnSelChangeVideoDeviceList();
-
     return nDeviceCount;
 }
 
 int CCameraHostDlg::EnumAudioDeviceList()
 {
     int nDeviceCount = 0;
-    int default_selected = -1;
-
     if (pCameraCapture_ != NULL) {
         nDeviceCount = pCameraCapture_->ListAudioDevices();
+        cbxAudioDeviceList_.Clear();
         if (nDeviceCount > 0) {
-            cbxAudioDeviceList_.Clear();
-        }
-        for (int i = 0; i < nDeviceCount; i++) {
-            const std::string & deviceName = pCameraCapture_->audioDeviceList_[i];
-            std::tstring deviceNameW = Ansi2Unicode(deviceName);             
-            cbxAudioDeviceList_.AddString(deviceNameW.c_str());
+            for (int i = 0; i < nDeviceCount; i++) {
+                const std::string & deviceName = pCameraCapture_->audioDeviceList_[i];
+                std::tstring deviceNameW = Ansi2Unicode(deviceName);             
+                cbxAudioDeviceList_.AddString(deviceNameW.c_str());
+            }
+            cbxAudioDeviceList_.SetCurSel(0);
+            OnCbnSelChangeAudioDeviceList();
         }
     }
-
-    if (default_selected == -1)
-        default_selected = 0;
-
-    cbxAudioDeviceList_.SetCurSel(default_selected);
-    OnCbnSelChangeAudioDeviceList();
-
     return nDeviceCount;
 }
 
 void CCameraHostDlg::OnCbnSelChangeVideoDeviceList()
 {
+    if (cbxVideoDeviceList_.GetCount() <= 0)
+        return;
+
     int selected_idx = cbxVideoDeviceList_.GetCurSel();
     if (selected_idx < 0)
         return;
@@ -180,6 +164,9 @@ void CCameraHostDlg::OnCbnSelChangeVideoDeviceList()
 
 void CCameraHostDlg::OnCbnSelChangeAudioDeviceList()
 {
+    if (cbxAudioDeviceList_.GetCount() <= 0)
+        return;
+
     int selected_idx = cbxAudioDeviceList_.GetCurSel();
     if (selected_idx < 0)
         return;
