@@ -239,6 +239,8 @@
     <ClInclude Include="..\..\..\src\AVStreaming\AVStreaming.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\AVStreamingDlg.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\CameraHostDlg.h" />
+    <ClInclude Include="..\..\..\src\AVStreaming\fPtrAlloc.h" />
+    <ClInclude Include="..\..\..\src\AVStreaming\fSmartPtr.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\Mtype.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\PreviewWnd.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\Resource.h" />

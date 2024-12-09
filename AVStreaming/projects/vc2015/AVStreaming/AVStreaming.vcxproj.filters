@@ -48,6 +48,12 @@
     <ClInclude Include="..\..\..\src\AVStreaming\CameraCapture.h">
       <Filter>src</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\src\AVStreaming\fSmartPtr.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\AVStreaming\fPtrAlloc.h">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\..\src\AVStreaming\stdafx.cpp">

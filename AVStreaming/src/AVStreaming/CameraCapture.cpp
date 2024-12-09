@@ -12,11 +12,13 @@
 #include "utils.h"
 #include "Mtype.h"
 
+#include "fPtrAlloc.h"
+
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
-#include <libavutil/avutil.h>
 #include <libavdevice/avdevice.h>
+#include <libavutil/avutil.h>
 #include <libavutil/log.h>
 }
 
@@ -871,15 +873,15 @@ int CCameraCapture::ffmpeg_test()
     int result = 0;
 
     // 打开视频设备
-    AVInputFormat* videoInputFormat = av_find_input_format("dshow");
-    if (!videoInputFormat) {
+    AVInputFormat * videoInputFormat = av_find_input_format("dshow");
+    if (videoInputFormat == NULL) {
         av_log(NULL, AV_LOG_ERROR, "Could not find video input format\n");
         return -1;
     }
 
 #if 0
     // 列出视频设备
-    AVDeviceInfoList *videoDeviceList = NULL;
+    AVDeviceInfoList * videoDeviceList = NULL;
     result = avdevice_list_input_sources(videoInputFormat, NULL, NULL, &videoDeviceList);
     if (result < 0) {
         av_log(NULL, AV_LOG_ERROR, "Could not list video devices\n");
@@ -887,7 +889,7 @@ int CCameraCapture::ffmpeg_test()
     }
 
     // 选择视频设备
-    const char *videoDeviceName = videoDeviceList->devices[0]->device_name;
+    const char * videoDeviceName = videoDeviceList->devices[0]->device_name;
     av_log(NULL, AV_LOG_INFO, "Selected video device: %s\n", videoDeviceName);
 #endif
 
@@ -895,16 +897,16 @@ int CCameraCapture::ffmpeg_test()
     const char * videoDeviceName = vdDeviceName.c_str();
 
     // 列出音频设备
-    AVInputFormat *audioInputFormat = av_find_input_format("dshow");
-    if (!audioInputFormat) {
+    AVInputFormat * audioInputFormat = av_find_input_format("dshow");
+    if (audioInputFormat == NULL) {
         av_log(NULL, AV_LOG_ERROR, "Could not find audio input format\n");
         return -1;
     }
 
 #if 0
-    AVDeviceInfoList *audioDeviceList = NULL;
+    AVDeviceInfoList * audioDeviceList = NULL;
     result = avdevice_list_input_sources(audioInputFormat, NULL, NULL, &audioDeviceList);
-    if (result == ENOSYS) {
+    if (result == AVERROR(ENOSYS)) {
         // Not support
         result = -1;
     }
@@ -914,7 +916,7 @@ int CCameraCapture::ffmpeg_test()
     }
 
     // 选择音频设备
-    const char *audioDeviceName = audioDeviceList->devices[0]->device_name;
+    const char * audioDeviceName = audioDeviceList->devices[0]->device_name;
     av_log(NULL, AV_LOG_INFO, "Selected audio device: %s\n", audioDeviceName);
 #endif
 
@@ -928,12 +930,13 @@ int CCameraCapture::ffmpeg_test()
 #endif
 
     // 创建 AVFormatContext
-    AVFormatContext* inputVideoFormatCtx = avformat_alloc_context();
+    fSmartPtr<AVFormatContext> inputVideoFormatCtx = avformat_alloc_context();
 
     char video_url[256];
     snprintf(video_url, sizeof(video_url), "video=%s", videoDeviceName);
 
-    if (avformat_open_input(&inputVideoFormatCtx, video_url, videoInputFormat, NULL)!= 0) {
+    result = avformat_open_input(&inputVideoFormatCtx, video_url, videoInputFormat, NULL);
+    if (result != 0) {
         printf("无法打开输入视频设备\n");
         return -1;
     }
@@ -952,12 +955,13 @@ int CCameraCapture::ffmpeg_test()
     }
 
     // 创建 AVFormatContext
-    AVFormatContext* inputAudioFormatCtx = avformat_alloc_context();
+    fSmartPtr<AVFormatContext> inputAudioFormatCtx = avformat_alloc_context();
 
     char audio_url[256];
     snprintf(audio_url, sizeof(audio_url), "audio=%s", audioDeviceName);
 
-    if (avformat_open_input(&inputAudioFormatCtx, audio_url, audioInputFormat, NULL)!= 0) {
+    result = avformat_open_input(&inputAudioFormatCtx, audio_url, audioInputFormat, NULL);
+    if (result != 0) {
         printf("无法打开输入音频设备\n");
         return -1;
     }
@@ -976,13 +980,12 @@ int CCameraCapture::ffmpeg_test()
     }
 
     // 获取视频和音频的编解码器参数
-    AVCodecParameters* videoCodecParams = inputVideoFormatCtx->streams[videoStreamIndex]->codecpar;
-    AVCodecParameters* audioCodecParams = inputAudioFormatCtx->streams[audioStreamIndex]->codecpar;
+    AVCodecParameters * videoCodecParams = inputVideoFormatCtx->streams[videoStreamIndex]->codecpar;
+    AVCodecParameters * audioCodecParams = inputAudioFormatCtx->streams[audioStreamIndex]->codecpar;
 
     // 查找视频的编解码器
-    AVCodec* inputVideoCodec = avcodec_find_decoder(videoCodecParams->codec_id);
-    AVCodecContext* inputVideoCodecCtx = avcodec_alloc_context3(inputVideoCodec);
-    
+    AVCodec * inputVideoCodec = avcodec_find_decoder(videoCodecParams->codec_id);
+    fSmartPtr<AVCodecContext> inputVideoCodecCtx = avcodec_alloc_context3(inputVideoCodec);
 
     AVRational time_base = {1, 30};
     AVRational framerate = {30, 1};
@@ -995,7 +998,8 @@ int CCameraCapture::ffmpeg_test()
     inputVideoCodecCtx->framerate = framerate;
     inputVideoCodecCtx->gop_size = 12;
     inputVideoCodecCtx->max_b_frames = 0;
-    inputVideoCodecCtx->pix_fmt = AV_PIX_FMT_RGB24;
+    inputVideoCodecCtx->pix_fmt = AV_PIX_FMT_RGB565;
+    //inputVideoCodecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
 
     result = avcodec_open2(inputVideoCodecCtx, inputVideoCodec, NULL);
     if (result == AVERROR(EINVAL)) {
@@ -1008,7 +1012,7 @@ int CCameraCapture::ffmpeg_test()
 
     // 查找音频的编解码器
     AVCodec* inputAudioCodec = avcodec_find_decoder(audioCodecParams->codec_id);
-    AVCodecContext* inputAudioCodecCtx = avcodec_alloc_context3(inputAudioCodec);
+    fSmartPtr<AVCodecContext> inputAudioCodecCtx = avcodec_alloc_context3(inputAudioCodec);
 
     AVRational audio_time_base = { 1, audioCodecParams->sample_rate };
 
@@ -1027,7 +1031,7 @@ int CCameraCapture::ffmpeg_test()
     }
 
     // 创建输出格式上下文
-    AVFormatContext* outputFormatCtx = NULL;
+    fSmartPtr<AVFormatContext, 1> outputFormatCtx = NULL;
     result = avformat_alloc_output_context2(&outputFormatCtx, NULL, "mp4", "output.mp4");
     if (result < 0) {
         printf("无法创建输出格式context\n");
@@ -1035,8 +1039,8 @@ int CCameraCapture::ffmpeg_test()
     }
 
     // 打开视频的编解码器
-    AVCodec* outputVideoCodec = avcodec_find_encoder(AV_CODEC_ID_H264);
-    AVCodecContext* outputVideoCodecCtx = avcodec_alloc_context3(outputVideoCodec);
+    AVCodec * outputVideoCodec = avcodec_find_encoder(AV_CODEC_ID_H264);
+    fSmartPtr<AVCodecContext> outputVideoCodecCtx = avcodec_alloc_context3(outputVideoCodec);
 
     outputVideoCodecCtx->bit_rate = 2000000;
     outputVideoCodecCtx->codec_id = AV_CODEC_ID_H264;
@@ -1045,8 +1049,8 @@ int CCameraCapture::ffmpeg_test()
     outputVideoCodecCtx->height = videoCodecParams->height;
     outputVideoCodecCtx->time_base = time_base;
     outputVideoCodecCtx->framerate = framerate;
-    //outputVideoCodecCtx->gop_size = 12;
-    //outputVideoCodecCtx->max_b_frames = 1;
+    outputVideoCodecCtx->gop_size = 12;
+    outputVideoCodecCtx->max_b_frames = 1;
     outputVideoCodecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
 
     if (outputFormatCtx->oformat->flags & AVFMT_GLOBALHEADER) {
@@ -1056,7 +1060,7 @@ int CCameraCapture::ffmpeg_test()
     result = avcodec_open2(outputVideoCodecCtx, outputVideoCodec, NULL);
     if (result == AVERROR(ENOSYS) || result == AVERROR(EINVAL)) {
         // EINVAL: Invalid argument
-        result = 0;
+        //result = 0;
     }
     if (result < 0) {
         printf("无法打开输出视频编解码器\n");
@@ -1064,8 +1068,8 @@ int CCameraCapture::ffmpeg_test()
     }
 
     // 打开音频的编解码器
-    AVCodec* outputAudioCodec = avcodec_find_encoder(AV_CODEC_ID_AAC);
-    AVCodecContext* outputAudioCodecCtx = avcodec_alloc_context3(outputAudioCodec);
+    AVCodec * outputAudioCodec = avcodec_find_encoder(AV_CODEC_ID_AAC);
+    fSmartPtr<AVCodecContext> outputAudioCodecCtx = avcodec_alloc_context3(outputAudioCodec);
 
     outputAudioCodecCtx->codec_id = AV_CODEC_ID_AAC;
     outputAudioCodecCtx->codec_type = AVMEDIA_TYPE_AUDIO;
@@ -1086,8 +1090,8 @@ int CCameraCapture::ffmpeg_test()
     }
 
     // 添加视频和音频流
-    AVStream* outputVideoStream = avformat_new_stream(outputFormatCtx, outputVideoCodec);
-    AVStream* outputAudioStream = avformat_new_stream(outputFormatCtx, outputAudioCodec);
+    AVStream * outputVideoStream = avformat_new_stream(outputFormatCtx, outputVideoCodec);
+    AVStream * outputAudioStream = avformat_new_stream(outputFormatCtx, outputAudioCodec);
 
     // 复制视频和音频的编解码器参数
     //avcodec_parameters_copy(outputVideoStream->codecpar, videoCodecParams);
@@ -1117,9 +1121,13 @@ int CCameraCapture::ffmpeg_test()
     while (av_read_frame(inputVideoFormatCtx, &packet) >= 0) {
         if (packet.stream_index == videoStreamIndex) {
             // 编码视频帧
-            AVFrame* frame = av_frame_alloc();
+            AVFrame * frame = av_frame_alloc();
             int ret = avcodec_send_packet(outputVideoCodecCtx, &packet);
-            if (ret < 0) {
+            if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+                printf("EAGAIN or EOF\n");
+                return -1;
+            }
+            else if (ret < 0) {
                 av_frame_free(&frame);
                 av_packet_unref(&packet);
                 printf("发送视频数据包到解码器时出错\n");
@@ -1145,7 +1153,7 @@ int CCameraCapture::ffmpeg_test()
             av_frame_free(&frame);
         } else if (packet.stream_index == audioStreamIndex) {
             // 编码音频帧
-            AVFrame* frame = av_frame_alloc();
+            AVFrame * frame = av_frame_alloc();
             int ret = avcodec_send_packet(outputAudioCodecCtx, &packet);
             if (ret < 0) {
                 av_frame_free(&frame);
@@ -1179,11 +1187,12 @@ int CCameraCapture::ffmpeg_test()
     av_write_trailer(outputFormatCtx);
 
     // 释放资源
-    avformat_close_input(&inputVideoFormatCtx);
-    avformat_close_input(&inputAudioFormatCtx);
-    avcodec_free_context(&outputVideoCodecCtx);
-    avcodec_free_context(&outputAudioCodecCtx);
-    avformat_free_context(outputFormatCtx);
+    //avformat_close_input(&inputVideoFormatCtx);
+    //avformat_close_input(&inputAudioFormatCtx);
+    //avcodec_free_context(&outputVideoCodecCtx);
+    //avcodec_free_context(&outputAudioCodecCtx);
+    //avformat_free_context(outputFormatCtx);
 
+    avformat_network_deinit();
     return 0;
 }
