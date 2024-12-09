@@ -206,10 +206,10 @@ bool CCameraHostDlg::StartCapture()
             std::string videoDevice = GetSelectedVideoDevice();
             std::string audioDevice = GetSelectedAudioDevice();
             if (videoDevice != selectedVideoDevice_ && audioDevice != selectedAudioDevice_) {
-#if 0 || defined(_DEBUG)
+#if 1 || defined(_DEBUG)
                 bool result = pCameraCapture_->Render(MODE_PREVIEW_VIDEO, NULL,
                                                       videoDevice.c_str(), audioDevice.c_str());
-#elif 1
+#elif 0
                 bool result = pCameraCapture_->Render(MODE_RECORD_VIDEO, _T("test.avi"),
                                                       videoDevice.c_str(), audioDevice.c_str());
 #else

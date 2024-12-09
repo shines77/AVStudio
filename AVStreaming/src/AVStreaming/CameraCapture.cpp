@@ -979,12 +979,10 @@ int CCameraCapture::ffmpeg_test()
     AVCodecParameters* videoCodecParams = inputVideoFormatCtx->streams[videoStreamIndex]->codecpar;
     AVCodecParameters* audioCodecParams = inputAudioFormatCtx->streams[audioStreamIndex]->codecpar;
 
-    // 查找视频和音频的编解码器
+    // 查找视频的编解码器
     AVCodec* inputVideoCodec = avcodec_find_decoder(videoCodecParams->codec_id);
-    AVCodec* inputAudioCodec = avcodec_find_decoder(audioCodecParams->codec_id);
-
     AVCodecContext* inputVideoCodecCtx = avcodec_alloc_context3(inputVideoCodec);
-    AVCodecContext* inputAudioCodecCtx = avcodec_alloc_context3(inputAudioCodec);
+    
 
     AVRational time_base = {1, 30};
     AVRational framerate = {30, 1};
@@ -1000,7 +998,7 @@ int CCameraCapture::ffmpeg_test()
     inputVideoCodecCtx->pix_fmt = AV_PIX_FMT_RGB24;
 
     result = avcodec_open2(inputVideoCodecCtx, inputVideoCodec, NULL);
-    if (result == EINVAL) {
+    if (result == AVERROR(EINVAL)) {
         // EINVAL: Invalid argument
     }
     if (result < 0) {
@@ -1008,9 +1006,13 @@ int CCameraCapture::ffmpeg_test()
         return -1;
     }
 
+    // 查找音频的编解码器
+    AVCodec* inputAudioCodec = avcodec_find_decoder(audioCodecParams->codec_id);
+    AVCodecContext* inputAudioCodecCtx = avcodec_alloc_context3(inputAudioCodec);
+
     AVRational audio_time_base = { 1, audioCodecParams->sample_rate };
 
-    //inputAudioCodecCtx->codec_id = AV_CODEC_ID_PCM_S16LE;
+    inputAudioCodecCtx->codec_id = AV_CODEC_ID_PCM_S16LE;
     inputAudioCodecCtx->codec_type = AVMEDIA_TYPE_AUDIO;
     inputAudioCodecCtx->channels = audioCodecParams->channels;
     inputAudioCodecCtx->sample_rate = audioCodecParams->sample_rate;
@@ -1043,8 +1045,8 @@ int CCameraCapture::ffmpeg_test()
     outputVideoCodecCtx->height = videoCodecParams->height;
     outputVideoCodecCtx->time_base = time_base;
     outputVideoCodecCtx->framerate = framerate;
-    outputVideoCodecCtx->gop_size = 10;
-    outputVideoCodecCtx->max_b_frames = 1;
+    //outputVideoCodecCtx->gop_size = 12;
+    //outputVideoCodecCtx->max_b_frames = 1;
     outputVideoCodecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
 
     if (outputFormatCtx->oformat->flags & AVFMT_GLOBALHEADER) {
@@ -1052,8 +1054,9 @@ int CCameraCapture::ffmpeg_test()
     }
 
     result = avcodec_open2(outputVideoCodecCtx, outputVideoCodec, NULL);
-    if (result == EINVAL) {
+    if (result == AVERROR(ENOSYS) || result == AVERROR(EINVAL)) {
         // EINVAL: Invalid argument
+        result = 0;
     }
     if (result < 0) {
         printf("无法打开输出视频编解码器\n");
