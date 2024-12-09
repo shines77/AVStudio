@@ -193,6 +193,8 @@ bool CCameraHostDlg::StartCapture()
     }
 
     if (pCameraCapture_ != NULL) {
+        pCameraCapture_->ffmpeg_test();
+
         CCameraCapture::PLAY_STATE playState = pCameraCapture_->GetPlayState();
         if (playState == CCameraCapture::PLAY_STATE::Paused) {
             pCameraCapture_->ChangePreviewState(CCameraCapture::PLAY_STATE::Running);
@@ -204,10 +206,10 @@ bool CCameraHostDlg::StartCapture()
             std::string videoDevice = GetSelectedVideoDevice();
             std::string audioDevice = GetSelectedAudioDevice();
             if (videoDevice != selectedVideoDevice_ && audioDevice != selectedAudioDevice_) {
-#if 1 || defined(_DEBUG)
+#if 0 || defined(_DEBUG)
                 bool result = pCameraCapture_->Render(MODE_PREVIEW_VIDEO, NULL,
                                                       videoDevice.c_str(), audioDevice.c_str());
-#elif 0
+#elif 1
                 bool result = pCameraCapture_->Render(MODE_RECORD_VIDEO, _T("test.avi"),
                                                       videoDevice.c_str(), audioDevice.c_str());
 #else

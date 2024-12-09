@@ -145,6 +145,8 @@ public:
     void ResizeVideoWindow(HWND hwndPreview = NULL);
     bool AttachToVideoWindow(HWND hwndPreview);
 
+    int ffmpeg_test();
+
     int ListVideoConfigures();
     int ListAudioConfigures();
 

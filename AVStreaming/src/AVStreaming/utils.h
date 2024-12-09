@@ -19,3 +19,5 @@ std::string Unicode2Ansi(const std::wstring & unicodeStr);
 std::string Ansi2Unicode(const std::string & str)
 std::string Unicode2Ansi(const std::string & str);
 #endif // _UNICODE
+
+std::string Ansi2Utf8(const std::string & ansiStr);

@@ -78,21 +78,33 @@
     <LinkIncremental>true</LinkIncremental>
     <OutDir>$(SolutionDir)bin\vc2015\$(PlatformShortName)-$(Configuration)\</OutDir>
     <IntDir>$(SolutionDir)obj\vc2015\$(PlatformShortName)-$(Configuration)\$(ProjectName)\</IntDir>
+    <ExecutablePath>C:\Project\OpenSrc\ffmpeg\ffmpeg-4.2.10\build_shared\bin;$(ExecutablePath)</ExecutablePath>
+    <IncludePath>C:\Project\OpenSrc\ffmpeg\ffmpeg-4.2.10\build_shared\include;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Project\OpenSrc\ffmpeg\ffmpeg-4.2.10\build_shared\lib;C:\Project\OpenSrc\ffmpeg\ffmpeg-4.2.10\build_shared\bin;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
     <OutDir>$(SolutionDir)bin\vc2015\$(PlatformShortName)-$(Configuration)\</OutDir>
     <IntDir>$(SolutionDir)obj\vc2015\$(PlatformShortName)-$(Configuration)\$(ProjectName)\</IntDir>
+    <ExecutablePath>C:\Project\OpenSrc\ffmpeg\ffmpeg-4.2.10\build_shared\bin;$(ExecutablePath)</ExecutablePath>
+    <IncludePath>C:\Project\OpenSrc\ffmpeg\ffmpeg-4.2.10\build_shared\include;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Project\OpenSrc\ffmpeg\ffmpeg-4.2.10\build_shared\lib;C:\Project\OpenSrc\ffmpeg\ffmpeg-4.2.10\build_shared\bin;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
     <OutDir>$(SolutionDir)bin\vc2015\$(PlatformShortName)-$(Configuration)\</OutDir>
     <IntDir>$(SolutionDir)obj\vc2015\$(PlatformShortName)-$(Configuration)\$(ProjectName)\</IntDir>
+    <ExecutablePath>C:\Project\OpenSrc\ffmpeg\ffmpeg-4.2.10\build_shared\bin;$(ExecutablePath)</ExecutablePath>
+    <IncludePath>C:\Project\OpenSrc\ffmpeg\ffmpeg-4.2.10\build_shared\include;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Project\OpenSrc\ffmpeg\ffmpeg-4.2.10\build_shared\lib;C:\Project\OpenSrc\ffmpeg\ffmpeg-4.2.10\build_shared\bin;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
     <OutDir>$(SolutionDir)bin\vc2015\$(PlatformShortName)-$(Configuration)\</OutDir>
     <IntDir>$(SolutionDir)obj\vc2015\$(PlatformShortName)-$(Configuration)\$(ProjectName)\</IntDir>
+    <ExecutablePath>C:\Project\OpenSrc\ffmpeg\ffmpeg-4.2.10\build_shared\bin;$(ExecutablePath)</ExecutablePath>
+    <IncludePath>C:\Project\OpenSrc\ffmpeg\ffmpeg-4.2.10\build_shared\include;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Project\OpenSrc\ffmpeg\ffmpeg-4.2.10\build_shared\lib;C:\Project\OpenSrc\ffmpeg\ffmpeg-4.2.10\build_shared\bin;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -109,6 +121,8 @@
       <AdditionalLibraryDirectories>$(SolutionDir)lib;.\lib;C:\Program Files (x86)\Visual Leak Detector\lib\Win32;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <UACExecutionLevel>RequireAdministrator</UACExecutionLevel>
+      <AdditionalDependencies>avcodec.lib;avdevice.lib;avfilter.lib;avformat.lib;avutil.lib;swresample.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Midl>
       <MkTypLibCompatible>false</MkTypLibCompatible>
@@ -136,6 +150,9 @@
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
       <AdditionalLibraryDirectories>$(SolutionDir)lib;.\lib;C:\Program Files (x86)\Visual Leak Detector\lib\Win64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>avcodec.lib;avdevice.lib;avfilter.lib;avformat.lib;avutil.lib;swresample.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <UACExecutionLevel>RequireAdministrator</UACExecutionLevel>
+      <UACUIAccess>false</UACUIAccess>
     </Link>
     <Midl>
       <MkTypLibCompatible>false</MkTypLibCompatible>
@@ -167,6 +184,8 @@
       <AdditionalLibraryDirectories>$(SolutionDir)lib;.\lib;C:\Program Files (x86)\Visual Leak Detector\lib\Win32;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <UACExecutionLevel>RequireAdministrator</UACExecutionLevel>
+      <AdditionalDependencies>avcodec.lib;avdevice.lib;avfilter.lib;avformat.lib;avutil.lib;swresample.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Midl>
       <MkTypLibCompatible>false</MkTypLibCompatible>
@@ -198,6 +217,9 @@
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
       <AdditionalLibraryDirectories>$(SolutionDir)lib;.\lib;C:\Program Files (x86)\Visual Leak Detector\lib\Win64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>avcodec.lib;avdevice.lib;avfilter.lib;avformat.lib;avutil.lib;swresample.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <UACExecutionLevel>RequireAdministrator</UACExecutionLevel>
+      <UACUIAccess>false</UACUIAccess>
     </Link>
     <Midl>
       <MkTypLibCompatible>false</MkTypLibCompatible>
