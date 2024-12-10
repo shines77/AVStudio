@@ -14,7 +14,7 @@ extern "C" {
 /* AVFormatContext (0) */
 
 template <>
-struct fPtrAlloc<AVFormatContext, 0>
+struct fAllocator<AVFormatContext, 0>
 {
     inline void _free(AVFormatContext * ptr) {
         if (ptr) {
@@ -26,7 +26,7 @@ struct fPtrAlloc<AVFormatContext, 0>
 /* AVFormatContext: (1) */
 
 template <>
-struct fPtrAlloc<AVFormatContext, 1>
+struct fAllocator<AVFormatContext, 1>
 {
     inline void _free(AVFormatContext * ptr) {
         if (ptr) {
@@ -38,7 +38,7 @@ struct fPtrAlloc<AVFormatContext, 1>
 /* AVCodecContext */
 
 template <>
-struct fPtrAlloc<AVCodecContext>
+struct fAllocator<AVCodecContext>
 {
     inline void _free(AVCodecContext * ptr) {
         if (ptr) {
@@ -47,4 +47,26 @@ struct fPtrAlloc<AVCodecContext>
     }
 };
 
+/* AVFrame */
 
+template <>
+struct fAllocator<AVFrame>
+{
+    inline void _free(AVFrame * ptr) {
+        if (ptr) {
+            av_frame_free(&ptr);
+        }
+    }
+};
+
+/* AVFrame */
+
+template <>
+struct fAllocator<AVPacket>
+{
+    inline void _free(AVPacket * ptr) {
+        if (ptr) {
+            av_packet_unref(ptr);
+        }
+    }
+};

@@ -100,6 +100,13 @@ struct CamAudioConfig
 	}
 };
 
+struct AVFormatContext;
+struct AVCodecContext;
+struct AVFrame;
+
+enum AVPixelFormat;
+enum AVSampleFormat;
+
 class CCameraCapture
 {
 public:
@@ -184,6 +191,15 @@ public:
 protected:
     void InitInterfaces();
     void ReleaseInterfaces();
+
+    int avcodec_encode_video_frame(AVFormatContext * outputFormatCtx,
+                                   AVCodecContext * videoCodecCtx,
+                                   AVFrame * srcFrame, AVPixelFormat src_format,
+                                   AVPixelFormat dest_format);
+    int avcodec_encode_audio_frame(AVFormatContext * outputFormatCtx,
+                                   AVCodecContext * audioCodecCtx,
+                                   AVFrame * srcFrame, AVSampleFormat src_format,
+                                   AVSampleFormat dest_format);
 
 private:
     HWND                    hwndPreview_;           // Ô¤ÀÀ´°¿Ú¾ä±ú

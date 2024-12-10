@@ -5,7 +5,7 @@
 #include <type_traits>
 
 template <typename T, std::size_t Id = 0>
-struct fPtrAlloc
+struct fAllocator
 {
     typedef typename std::remove_const<T>::type value_type;
     typedef value_type *                        point_type;
@@ -23,7 +23,7 @@ public:
     typedef typename std::remove_const<T>::type value_type;
     typedef value_type *                        point_type;
     typedef value_type &                        reference_type;
-    typedef fPtrAlloc<T, Id>                    alloc_type;
+    typedef fAllocator<T, Id>                   allocator_t;
     typedef fRefCount<T, Id>                    this_type;
 
     typedef intptr_t counter_t;
@@ -62,12 +62,12 @@ public:
     }
 
     void _free(point_type ptr) {
-        alloc_._free(ptr);
+        allocator_._free(ptr);
     }
 
     point_type  ptr_;
     counter_t   count_;
-    alloc_type  alloc_;
+    allocator_t allocator_;
 };
 
 template <typename T>
@@ -114,6 +114,10 @@ public:
 
     ~fSmartPtr() {
         release();
+    }
+
+    bool is_valid() const {
+        return (mgr_ != nullptr);
     }
 
     const manager_t * mgr() const noexcept {
@@ -194,7 +198,7 @@ public:
 
                 // Create new always
                 mgr_ = new manager_t(value);
-                mgr_->count_ = 1;
+                mgr_->add_ref();
             }
         }
         return *this;
@@ -266,6 +270,22 @@ public:
 
     friend inline bool operator != (const this_type & lhs, const this_type & rhs) noexcept {
         return !(lhs == rhs);
+    }
+
+    friend inline bool operator == (const this_type & lhs, int val) noexcept {
+        return ((intptr_t)lhs.ptr() == (intptr_t)val);
+    }
+
+    friend inline bool operator != (const this_type & lhs, int val) noexcept {
+        return ((intptr_t)lhs.ptr() != (intptr_t)val);
+    }
+
+    friend inline bool operator == (int val, const this_type & rhs) noexcept {
+        return ((intptr_t)rhs.ptr() == (intptr_t)val);
+    }
+
+    friend inline bool operator != (int val, const this_type & rhs) noexcept {
+        return ((intptr_t)rhs.ptr() != (intptr_t)val);
     }
 
     friend inline bool operator == (const this_type & lhs, nullptr_t) noexcept {

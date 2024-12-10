@@ -12,12 +12,14 @@
 #include "utils.h"
 #include "Mtype.h"
 
-#include "fPtrAlloc.h"
+#include "fAllocator.h"
 
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavdevice/avdevice.h>
+#include <libswscale/swscale.h>
+#include <libswresample/swresample.h>
 #include <libavutil/avutil.h>
 #include <libavutil/log.h>
 }
@@ -861,21 +863,227 @@ bool CCameraCapture::ContinuePlayingLocalVideo()
         return true;
 }
 
+int transform_video_format(AVFrame * src_frame, AVPixelFormat src_format,
+                           AVFrame * dest_frame, AVPixelFormat dest_format)
+{
+    if (src_frame->format != src_format) {
+        debug_print("Input frame is not in YUV422P format\n");
+        return -1;
+    }
+
+    if (dest_frame->format != dest_format) {
+        debug_print("Output frame is not in YUV420P format\n");
+        return -1;
+    }
+
+    // 检查输入和输出帧的宽度和高度是否一致
+    if (src_frame->width != dest_frame->width || src_frame->height != dest_frame->height) {
+        debug_print("Input and output frame dimensions do not match\n");
+        return -1;
+    }
+
+    // 创建 SwsContext 用于格式转换
+    SwsContext * sws_ctx = sws_getContext(
+        src_frame->width, src_frame->height, src_format,
+        dest_frame->width, dest_frame->height, dest_format,
+        SWS_BILINEAR, NULL, NULL, NULL);
+
+    if (!sws_ctx) {
+        debug_print("Could not initialize the conversion context\n");
+        return -1;
+    }
+
+    // 执行格式转换
+    int ret = sws_scale(sws_ctx,
+                        (const uint8_t * const *)src_frame->data, src_frame->linesize,
+                        0, src_frame->height,
+                        dest_frame->data, dest_frame->linesize);
+
+    // 释放 SwsContext
+    sws_freeContext(sws_ctx);
+    return ret;
+}
+
+int transform_audio_format(AVCodecContext * audioCodecCtx,
+                           AVFrame * src_frame, AVSampleFormat src_format,
+                           AVFrame * dest_frame, AVSampleFormat dest_format)
+{
+    int ret = 0;
+
+    // 初始化 SwrContext 用于样本格式转换
+    SwrContext * swr_ctx = swr_alloc_set_opts(
+        NULL,
+        audioCodecCtx->channel_layout,
+        audioCodecCtx->sample_fmt,
+        audioCodecCtx->sample_rate,
+        src_frame->channel_layout,
+        (AVSampleFormat)src_frame->format,
+        src_frame->sample_rate,
+        0, NULL);
+    if (swr_ctx == NULL)
+        return -1;
+
+    // 转换 PCM 数据到 AAC 帧
+    ret = swr_convert(swr_ctx, dest_frame->data,
+                      dest_frame->nb_samples,
+                      (const uint8_t **)src_frame->data,
+                      src_frame->nb_samples);
+
+    // 释放 SwrContext
+    swr_free(&swr_ctx);
+    return ret;
+}
+
+int CCameraCapture::avcodec_encode_video_frame(AVFormatContext * outputFormatCtx,
+                                               AVCodecContext * videoCodecCtx,
+                                               AVFrame * srcFrame, AVPixelFormat src_format,
+                                               AVPixelFormat dest_format)
+{
+    int ret;
+    // 创建一个 YUV420P 格式的 AVFrame
+    fSmartPtr<AVFrame> destFrame = av_frame_alloc();
+    if (destFrame == NULL) {
+        debug_print("destFrame 创建失败\n");
+        return -1;
+    }
+
+    ret = av_frame_copy_props(destFrame, srcFrame);
+
+    destFrame->width  = srcFrame->width;
+    destFrame->height = srcFrame->height;
+    destFrame->pkt_duration = srcFrame->pkt_duration;
+    destFrame->pkt_size = srcFrame->pkt_size;
+    destFrame->format = (int)dest_format;
+
+    // 为 YUV420P 格式的 AVFrame 分配内存
+    ret = av_frame_get_buffer(destFrame, 32);
+    if (ret < 0) {
+        debug_print("Could not allocate destination frame data\n");
+        return -1;
+    }
+
+    ret = av_frame_make_writable(destFrame);
+
+    // 调用转换函数
+    ret = transform_video_format(srcFrame, src_format, destFrame, dest_format);
+    if (ret < 0) {
+        debug_print("Failed to convert YUV422P to YUV420P\n");
+        return -1;
+    }
+
+    // 输出视频编码
+    ret = avcodec_send_frame(videoCodecCtx, destFrame);
+    if (ret < 0) {
+        debug_print("发送视频数据包到编码器时出错\n");
+        return ret;
+    }
+    while (1) {
+        fSmartPtr<AVPacket> videoPacket = av_packet_alloc();
+        ret = avcodec_receive_packet(videoCodecCtx, videoPacket);
+        if (ret == 0) {
+            ret = av_interleaved_write_frame(outputFormatCtx, videoPacket);
+            //ret = av_write_frame(outputFormatCtx, videoPacket);
+            break;
+        }
+        else if (ret == AVERROR(EAGAIN)) {
+            break;
+        }
+        else if (ret == AVERROR_EOF) {
+            debug_print("EOF\n");
+            break;
+        }
+        else if (ret < 0) {
+            debug_print("从编码器接收视频帧时出错\n");
+            break;
+        }
+    }
+    return ret;
+}
+
+int CCameraCapture::avcodec_encode_audio_frame(AVFormatContext * outputFormatCtx,
+                                               AVCodecContext * audioCodecCtx,
+                                               AVFrame * srcFrame, AVSampleFormat src_format,
+                                               AVSampleFormat dest_format)
+{
+    int ret;
+    // 创建一个 AAC 格式的 AVFrame
+    fSmartPtr<AVFrame> destFrame = av_frame_alloc();
+    if (destFrame == NULL) {
+        debug_print("destFrame 创建失败\n");
+        return -1;
+    }
+
+    //ret = av_frame_copy_props(destFrame, srcFrame);
+
+    destFrame->channels  = audioCodecCtx->channels;
+    destFrame->sample_rate = audioCodecCtx->sample_rate;
+    destFrame->channel_layout = audioCodecCtx->channel_layout;
+    destFrame->nb_samples = srcFrame->nb_samples;
+    //destFrame->pkt_duration = srcFrame->pkt_duration;
+    //destFrame->pkt_size = srcFrame->pkt_size;
+    destFrame->format = (int)dest_format;
+
+    // 为 AAC 格式的 AVFrame 分配内存
+    ret = av_frame_get_buffer(destFrame, 32);
+    if (ret < 0) {
+        debug_print("Could not allocate destination frame data\n");
+        return -1;
+    }
+
+    ret = av_frame_make_writable(destFrame);
+
+    // 调用转换函数
+    ret = transform_audio_format(audioCodecCtx, srcFrame, src_format, destFrame, dest_format);
+    if (ret < 0) {
+        debug_print("Failed to convert PCM_S16LE to AAC\n");
+        return -1;
+    }
+
+    // 输出视频编码
+    ret = avcodec_send_frame(audioCodecCtx, destFrame);
+    if (ret < 0) {
+        debug_print("发送音频数据包到编码器时出错\n");
+        return ret;
+    }
+    while (1) {
+        fSmartPtr<AVPacket> audioPacket = av_packet_alloc();
+        ret = avcodec_receive_packet(audioCodecCtx, audioPacket);
+        if (ret == 0) {
+            ret = av_interleaved_write_frame(outputFormatCtx, audioPacket);
+            //ret = av_write_frame(outputFormatCtx, audioPacket);
+            break;
+        }
+        else if (ret == AVERROR(EAGAIN)) {
+            break;
+        }
+        else if (ret == AVERROR_EOF) {
+            debug_print("EOF\n");
+            break;
+        }
+        else if (ret < 0) {
+            debug_print("从编码器接收音频帧时出错\n");
+            break;
+        }
+    }
+    return ret;
+}
+
 int CCameraCapture::ffmpeg_test()
 {
-    // 初始化FFmpeg
+    // 初始化 FFmpeg
     av_register_all();
     avdevice_register_all();
     avformat_network_init();
 
     av_log_set_level(AV_LOG_INFO);
+    set_log_level(LOG_INFO);
 
     int result = 0;
 
     // 打开视频设备
     AVInputFormat * videoInputFormat = av_find_input_format("dshow");
     if (videoInputFormat == NULL) {
-        av_log(NULL, AV_LOG_ERROR, "Could not find video input format\n");
+        log_print(LOG_ERROR, "Could not find video input format\n");
         return -1;
     }
 
@@ -884,13 +1092,13 @@ int CCameraCapture::ffmpeg_test()
     AVDeviceInfoList * videoDeviceList = NULL;
     result = avdevice_list_input_sources(videoInputFormat, NULL, NULL, &videoDeviceList);
     if (result < 0) {
-        av_log(NULL, AV_LOG_ERROR, "Could not list video devices\n");
+        log_print(LOG_ERROR, "Could not list video devices\n");
         return -1;
     }
 
     // 选择视频设备
     const char * videoDeviceName = videoDeviceList->devices[0]->device_name;
-    av_log(NULL, AV_LOG_INFO, "Selected video device: %s\n", videoDeviceName);
+    log_print(LOG_INFO, "Selected video device: %s\n", videoDeviceName);
 #endif
 
     std::string vdDeviceName = Ansi2Utf8(videoDeviceList_[0]);
@@ -899,7 +1107,7 @@ int CCameraCapture::ffmpeg_test()
     // 列出音频设备
     AVInputFormat * audioInputFormat = av_find_input_format("dshow");
     if (audioInputFormat == NULL) {
-        av_log(NULL, AV_LOG_ERROR, "Could not find audio input format\n");
+        log_print(LOG_ERROR, "Could not find audio input format\n");
         return -1;
     }
 
@@ -911,13 +1119,13 @@ int CCameraCapture::ffmpeg_test()
         result = -1;
     }
     if (result < 0) {
-        av_log(NULL, AV_LOG_ERROR, "Could not list audio devices\n");
+        log_print(LOG_ERROR, "Could not list audio devices\n");
         return -1;
     }
 
     // 选择音频设备
     const char * audioDeviceName = audioDeviceList->devices[0]->device_name;
-    av_log(NULL, AV_LOG_INFO, "Selected audio device: %s\n", audioDeviceName);
+    log_print(LOG_INFO, "Selected audio device: %s\n", audioDeviceName);
 #endif
 
     std::string adDeviceName = Ansi2Utf8(audioDeviceList_[0]);
@@ -937,7 +1145,7 @@ int CCameraCapture::ffmpeg_test()
 
     result = avformat_open_input(&inputVideoFormatCtx, video_url, videoInputFormat, NULL);
     if (result != 0) {
-        printf("无法打开输入视频设备\n");
+        debug_print("无法打开输入视频设备\n");
         return -1;
     }
 
@@ -950,7 +1158,7 @@ int CCameraCapture::ffmpeg_test()
         }
     }
     if (videoStreamIndex == -1) {
-        printf("找不到输入视频流\n");
+        debug_print("找不到输入视频流\n");
         return -1;
     }
 
@@ -962,7 +1170,7 @@ int CCameraCapture::ffmpeg_test()
 
     result = avformat_open_input(&inputAudioFormatCtx, audio_url, audioInputFormat, NULL);
     if (result != 0) {
-        printf("无法打开输入音频设备\n");
+        debug_print("无法打开输入音频设备\n");
         return -1;
     }
 
@@ -975,7 +1183,7 @@ int CCameraCapture::ffmpeg_test()
         }
     }
     if (audioStreamIndex == -1) {
-        printf("找不到输入音频流\n");
+        debug_print("找不到输入音频流\n");
         return -1;
     }
 
@@ -990,7 +1198,9 @@ int CCameraCapture::ffmpeg_test()
     AVRational time_base = {1, 30};
     AVRational framerate = {30, 1};
 
-    inputVideoCodecCtx->bit_rate = 11000000;
+    // AV_CODEC_ID_RAWVIDEO (13): "RawVideo"
+    inputVideoCodecCtx->codec_id = videoCodecParams->codec_id;
+    inputVideoCodecCtx->bit_rate = 2000000;
     inputVideoCodecCtx->codec_type = AVMEDIA_TYPE_VIDEO;
     inputVideoCodecCtx->width = videoCodecParams->width;
     inputVideoCodecCtx->height = videoCodecParams->height;
@@ -998,35 +1208,37 @@ int CCameraCapture::ffmpeg_test()
     inputVideoCodecCtx->framerate = framerate;
     inputVideoCodecCtx->gop_size = 12;
     inputVideoCodecCtx->max_b_frames = 0;
-    inputVideoCodecCtx->pix_fmt = AV_PIX_FMT_RGB565;
-    //inputVideoCodecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
+    // AV_PIX_FMT_YUYV422 (1)
+    inputVideoCodecCtx->pix_fmt = (AVPixelFormat)videoCodecParams->format;
 
     result = avcodec_open2(inputVideoCodecCtx, inputVideoCodec, NULL);
     if (result == AVERROR(EINVAL)) {
         // EINVAL: Invalid argument
     }
     if (result < 0) {
-        printf("无法打开输入视频编解码器\n");
+        debug_print("无法打开输入视频编解码器\n");
         return -1;
     }
 
     // 查找音频的编解码器
-    AVCodec* inputAudioCodec = avcodec_find_decoder(audioCodecParams->codec_id);
+    AVCodec * inputAudioCodec = avcodec_find_decoder(audioCodecParams->codec_id);
     fSmartPtr<AVCodecContext> inputAudioCodecCtx = avcodec_alloc_context3(inputAudioCodec);
 
     AVRational audio_time_base = { 1, audioCodecParams->sample_rate };
 
-    inputAudioCodecCtx->codec_id = AV_CODEC_ID_PCM_S16LE;
+    // AV_CODEC_ID_PCM_S16LE (65536)
+    inputAudioCodecCtx->codec_id = audioCodecParams->codec_id;
     inputAudioCodecCtx->codec_type = AVMEDIA_TYPE_AUDIO;
     inputAudioCodecCtx->channels = audioCodecParams->channels;
     inputAudioCodecCtx->sample_rate = audioCodecParams->sample_rate;
     inputAudioCodecCtx->channel_layout = AV_CH_LAYOUT_STEREO;
     inputAudioCodecCtx->time_base = audio_time_base;
-    inputAudioCodecCtx->sample_fmt = AV_SAMPLE_FMT_S16;
+    // AV_SAMPLE_FMT_S16 (1)
+    inputAudioCodecCtx->sample_fmt = (AVSampleFormat)audioCodecParams->format;
 
     result = avcodec_open2(inputAudioCodecCtx, inputAudioCodec, NULL);
     if (result < 0) {
-        printf("无法打开输入音频编解码器\n");
+        debug_print("无法打开输入音频编解码器\n");
         return -1;
     }
 
@@ -1034,16 +1246,19 @@ int CCameraCapture::ffmpeg_test()
     fSmartPtr<AVFormatContext, 1> outputFormatCtx = NULL;
     result = avformat_alloc_output_context2(&outputFormatCtx, NULL, "mp4", "output.mp4");
     if (result < 0) {
-        printf("无法创建输出格式context\n");
+        debug_print("无法创建输出格式context\n");
         return -1;
     }
 
     // 打开视频的编解码器
     AVCodec * outputVideoCodec = avcodec_find_encoder(AV_CODEC_ID_H264);
+    if (outputVideoCodec == NULL) {
+        return -1;
+    }
     fSmartPtr<AVCodecContext> outputVideoCodecCtx = avcodec_alloc_context3(outputVideoCodec);
 
     outputVideoCodecCtx->bit_rate = 2000000;
-    outputVideoCodecCtx->codec_id = AV_CODEC_ID_H264;
+    //outputVideoCodecCtx->codec_id = AV_CODEC_ID_H263;
     outputVideoCodecCtx->codec_type = AVMEDIA_TYPE_VIDEO;
     outputVideoCodecCtx->width = videoCodecParams->width;
     outputVideoCodecCtx->height = videoCodecParams->height;
@@ -1052,18 +1267,28 @@ int CCameraCapture::ffmpeg_test()
     outputVideoCodecCtx->gop_size = 12;
     outputVideoCodecCtx->max_b_frames = 1;
     outputVideoCodecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
+    //outputVideoCodecCtx->pix_fmt = AV_PIX_FMT_NV12;
 
     if (outputFormatCtx->oformat->flags & AVFMT_GLOBALHEADER) {
         outputVideoCodecCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     }
 
-    result = avcodec_open2(outputVideoCodecCtx, outputVideoCodec, NULL);
+    //
+    // See: https://blog.csdn.net/weixin_50873490/article/details/141899535
+    //
+    if (outputVideoCodecCtx->codec_id == AV_CODEC_ID_H264) {
+        result = av_opt_set(outputVideoCodecCtx->priv_data, "profile", "main", 0);
+        // 0 latency
+        result = av_opt_set(outputVideoCodecCtx->priv_data, "tune", "zerolatency",0);
+    }
+
+    result = avcodec_open2(outputVideoCodecCtx.ptr(), outputVideoCodec, NULL);
     if (result == AVERROR(ENOSYS) || result == AVERROR(EINVAL)) {
         // EINVAL: Invalid argument
         //result = 0;
     }
     if (result < 0) {
-        printf("无法打开输出视频编解码器\n");
+        debug_print("无法打开输出视频编解码器\n");
         return -1;
     }
 
@@ -1071,6 +1296,7 @@ int CCameraCapture::ffmpeg_test()
     AVCodec * outputAudioCodec = avcodec_find_encoder(AV_CODEC_ID_AAC);
     fSmartPtr<AVCodecContext> outputAudioCodecCtx = avcodec_alloc_context3(outputAudioCodec);
 
+    outputAudioCodecCtx->bit_rate = 128000;
     outputAudioCodecCtx->codec_id = AV_CODEC_ID_AAC;
     outputAudioCodecCtx->codec_type = AVMEDIA_TYPE_AUDIO;
     outputAudioCodecCtx->channels = audioCodecParams->channels;
@@ -1085,7 +1311,7 @@ int CCameraCapture::ffmpeg_test()
 
     result = avcodec_open2(outputAudioCodecCtx, outputAudioCodec, NULL);
     if (result < 0) {
-        printf("无法打开输出音频编解码器\n");
+        debug_print("无法打开输出音频编解码器\n");
         return -1;
     }
 
@@ -1100,11 +1326,13 @@ int CCameraCapture::ffmpeg_test()
     avcodec_parameters_from_context(outputVideoStream->codecpar, outputVideoCodecCtx);
     avcodec_parameters_from_context(outputAudioStream->codecpar, outputAudioCodecCtx);
 
+    outputFormatCtx->bit_rate = 2000000;
+
     // 打开输出文件
     if (!(outputFormatCtx->oformat->flags & AVFMT_NOFILE)) {
         result = avio_open(&outputFormatCtx->pb, "output.mp4", AVIO_FLAG_WRITE);
         if (result < 0) {
-            printf("无法打开输出文件\n");
+            debug_print("无法打开输出文件\n");
             return -1;
         }
     }
@@ -1112,79 +1340,134 @@ int CCameraCapture::ffmpeg_test()
     // 写入文件头
     result = avformat_write_header(outputFormatCtx, NULL);
     if (result < 0) {
-        printf("无法写入文件头\n");
+        debug_print("无法写入文件头\n");
         return -1;
     }
 
     // 读取和编码视频帧
-    AVPacket packet;
-    while (av_read_frame(inputVideoFormatCtx, &packet) >= 0) {
-        if (packet.stream_index == videoStreamIndex) {
-            // 编码视频帧
-            AVFrame * frame = av_frame_alloc();
-            int ret = avcodec_send_packet(outputVideoCodecCtx, &packet);
-            if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
-                printf("EAGAIN or EOF\n");
-                return -1;
+
+    int ret;
+    int nFrameCount = 0;
+    bool isExit = false;
+    while (1) {
+        // Video
+        while (0) {
+            fSmartPtr<AVPacket> videoPacket = av_packet_alloc();
+            ret = av_read_frame(inputVideoFormatCtx, videoPacket);
+            if (ret < 0)
+                break;
+            av_packet_rescale_ts(videoPacket, inputVideoFormatCtx->streams[videoStreamIndex]->time_base,
+                                 outputVideoStream->time_base);
+            if (videoPacket->stream_index == videoStreamIndex) {
+                // 输入视频解码
+                ret = avcodec_send_packet(inputVideoCodecCtx, videoPacket);
+                if (ret < 0) {
+                    debug_print("发送视频数据包到解码器时出错\n");
+                    isExit = true;
+                    break;
+                }
+
+                while (1) {
+                    fSmartPtr<AVFrame> frame = av_frame_alloc();
+                    ret = av_frame_is_writable(frame);
+                    ret = avcodec_receive_frame(inputVideoCodecCtx, frame);
+                    if (ret == 0) {
+                        ret = av_frame_make_writable(frame);
+                        nFrameCount++;
+                        if (nFrameCount > 100) {
+                            isExit = true;
+                            break;
+                        }
+                        // 将编码后的视频帧写入输出文件
+                        //frame->pts = av_rescale_q(frame->pts, inputVideoCodecCtx->time_base, outputVideoStream->time_base);
+                        //frame->pts = nFrameCount;
+                        if (frame->pts == AV_NOPTS_VALUE) {
+                            frame->pts = frame->best_effort_timestamp;
+                        }
+                        frame->pkt_dts = frame->pts;
+                        //frame->pkt_duration = av_rescale_q(1, inputVideoCodecCtx->time_base, outputVideoStream->time_base);
+                        int ret2 = avcodec_encode_video_frame(outputFormatCtx, outputVideoCodecCtx,
+                                                              frame, inputVideoCodecCtx->pix_fmt,
+                                                              outputVideoCodecCtx->pix_fmt);
+                        if (ret2 < 0 && ret2 != AVERROR(EAGAIN)) {
+                            isExit = true;
+                            break;
+                        }
+                        break;
+                    }
+                    else if (ret == AVERROR(EAGAIN)) {
+                        debug_print("avcodec_receive_frame(): AVERROR(EAGAIN)\n");
+                        continue;
+                    }
+                    else if (ret == AVERROR_EOF) {
+                        debug_print("EOF\n");
+                        break;
+                    } else if (ret < 0) {
+                        debug_print("从解码器接收视频帧时出错\n");
+                        isExit = true;
+                        break;
+                    }
+                }
+                if (isExit)
+                    break;
             }
-            else if (ret < 0) {
-                av_frame_free(&frame);
-                av_packet_unref(&packet);
-                printf("发送视频数据包到解码器时出错\n");
-                return -1;
-            }
-            ret = avcodec_receive_frame(outputVideoCodecCtx, frame);
-            if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
-                av_frame_free(&frame);
-                av_packet_unref(&packet);
-                continue;
-            } else if (ret < 0) {
-                av_frame_free(&frame);
-                av_packet_unref(&packet);
-                printf("从解码器接收视频帧时出错\n");
-                return -1;
-            }
-            // 将编码后的视频帧写入输出文件
-            av_packet_rescale_ts(&packet, outputVideoCodecCtx->time_base, outputVideoStream->time_base);
-            frame->pts = av_rescale_q(frame->pts, outputVideoCodecCtx->time_base, outputVideoStream->time_base);
-            frame->pkt_dts = frame->pts;
-            frame->pkt_duration = av_rescale_q(1, outputVideoCodecCtx->time_base, outputVideoStream->time_base);
-            av_interleaved_write_frame(outputFormatCtx, &packet);
-            av_frame_free(&frame);
-        } else if (packet.stream_index == audioStreamIndex) {
-            // 编码音频帧
-            AVFrame * frame = av_frame_alloc();
-            int ret = avcodec_send_packet(outputAudioCodecCtx, &packet);
-            if (ret < 0) {
-                av_frame_free(&frame);
-                av_packet_unref(&packet);
-                printf("发送音频数据包到解码器时出错\n");
-                return -1;
-            }
-            ret = avcodec_receive_frame(outputAudioCodecCtx, frame);
-            if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
-                av_frame_free(&frame);
-                av_packet_unref(&packet);
-                continue;
-            } else if (ret < 0) {
-                av_frame_free(&frame);
-                av_packet_unref(&packet);
-                printf("从解码器接收音频帧时出错\n");
-                return -1;
-            }
-            // 将编码后的音频帧写入输出文件
-            av_packet_rescale_ts(&packet, outputAudioCodecCtx->time_base, outputAudioStream->time_base);
-            frame->pts = av_rescale_q(frame->pts, outputAudioCodecCtx->time_base, outputAudioStream->time_base);
-            frame->pkt_dts = frame->pts;
-            frame->pkt_duration = av_rescale_q(1, outputAudioCodecCtx->time_base, outputAudioStream->time_base);
-            av_interleaved_write_frame(outputFormatCtx, &packet);
-            av_frame_free(&frame);
         }
-        av_packet_unref(&packet);
+
+        if (isExit)
+            break;
+
+        // Audio
+        while (1) {
+            fSmartPtr<AVPacket> audioPacket = av_packet_alloc();
+            ret = av_read_frame(inputAudioFormatCtx, audioPacket);
+            if (ret < 0)
+                break;
+            if (audioPacket->stream_index == audioStreamIndex) {
+                // 输入音频解码
+                av_packet_rescale_ts(audioPacket, inputAudioFormatCtx->streams[videoStreamIndex]->time_base,
+                                     outputAudioStream->time_base);
+                fSmartPtr<AVFrame> frame = av_frame_alloc();
+                int ret = avcodec_send_packet(inputAudioCodecCtx, audioPacket);
+                if (ret < 0) {
+                    debug_print("发送音频数据包到解码器时出错\n");
+                    break;
+                }
+                while (ret >= 0) {
+                    ret = avcodec_receive_frame(inputAudioCodecCtx, frame);
+                    if (ret == 0)
+                        break;
+                    if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+                        break;
+                    } else if (ret < 0) {
+                        debug_print("从解码器接收音频帧时出错\n");
+                        break;
+                    }
+                }
+                // 将编码后的音频帧写入输出文件
+                //frame->pts = av_rescale_q(frame->pts, inputAudioCodecCtx->time_base, outputAudioStream->time_base);
+                //frame->pkt_dts = frame->pts;
+                //frame->pkt_duration = av_rescale_q(1, inputAudioCodecCtx->time_base, outputAudioStream->time_base);
+                if (frame->pts == AV_NOPTS_VALUE) {
+                    frame->pts = frame->best_effort_timestamp;
+                }
+                frame->pkt_dts = frame->pts;
+
+                int ret2 = avcodec_encode_audio_frame(outputFormatCtx, outputAudioCodecCtx,
+                                                      frame, inputAudioCodecCtx->sample_fmt,
+                                                      outputAudioCodecCtx->sample_fmt);
+                if (ret2 < 0 && ret2 != AVERROR(EAGAIN)) {
+                    isExit = true;
+                    break;
+                }
+            }
+        }
+        if (isExit)
+            break;
     }
 
     // 写入文件尾
-    av_write_trailer(outputFormatCtx);
+    ret = av_write_trailer(outputFormatCtx);
+    ret = avformat_flush(outputFormatCtx);
 
     // 释放资源
     //avformat_close_input(&inputVideoFormatCtx);

@@ -1,13 +1,143 @@
 
 #include "stdafx.h"
+#include "utils.h"
+
 #include <tchar.h>
 #include <memory.h>
+#include <vadefs.h>
+#include <strsafe.h>
+#include <debugapi.h>
 
 #include <string>
 #include <cwchar>
 #include <cerrno>
 #include <locale>
 #include <memory>
+
+int s_log_level = LOG_INFO;
+
+const char * get_level_nameA(int level)
+{
+    switch (level) {
+        case LOG_FATAL:
+            return "Fatal";
+        case LOG_ERROR:
+            return "Error";
+        case LOG_WARNING:
+            return "Warning";
+        case LOG_INFO:
+            return "Info";
+        case LOG_VERBOSE:
+            return "Verbose";
+        case LOG_DEBUG:
+            return "Debug";
+        default:
+            return "Unknown";
+    }
+}
+
+const wchar_t * get_level_nameW(int level)
+{
+    switch (level) {
+        case LOG_FATAL:
+            return L"Fatal";
+        case LOG_ERROR:
+            return L"Error";
+        case LOG_WARNING:
+            return L"Warning";
+        case LOG_INFO:
+            return L"Info";
+        case LOG_VERBOSE:
+            return L"Verbose";
+        case LOG_DEBUG:
+            return L"Debug";
+        default:
+            return L"Unknown";
+    }
+}
+
+void set_log_level(int level)
+{
+    s_log_level = level;
+}
+
+void debug_printv(const char * fmt, va_list args)
+{
+    static const size_t kBufSize = 2048;
+    static char szBuffer[kBufSize] = { 0 };
+
+    // Use a bounded buffer size to prevent buffer overruns. Limit count to
+    // character size minus one to allow for a NULL terminating character.
+    HRESULT hr = StringCchVPrintfA(szBuffer, kBufSize - 1, fmt, args);
+
+    // Ensure that the formatted string is NULL-terminated
+    szBuffer[kBufSize - 1] = '\0';
+
+    ::OutputDebugStringA(szBuffer);
+}
+
+void debug_print(const char * fmt, ...)
+{
+    // Format the input string
+    va_list args;
+    va_start(args, fmt);
+
+    debug_printv(fmt, args);
+    va_end(args);
+}
+
+void debug_printv_w(const wchar_t * fmt, va_list args)
+{
+    static const size_t kBufSize = 2048;
+    static wchar_t szBuffer[kBufSize] = { 0 };
+
+    // Use a bounded buffer size to prevent buffer overruns. Limit count to
+    // character size minus one to allow for a NULL terminating character.
+    HRESULT hr = StringCchVPrintfW(szBuffer, kBufSize - 1, fmt, args);
+
+    // Ensure that the formatted string is NULL-terminated
+    szBuffer[kBufSize - 1] = '\0';
+
+    ::OutputDebugStringW(szBuffer);
+}
+
+void debug_print_w(const wchar_t * fmt, ...)
+{
+    // Format the input string
+    va_list args;
+    va_start(args, fmt);
+
+    debug_printv_w(fmt, args);
+    va_end(args);
+}
+
+void log_print(int level, const char * fmt, ...)
+{
+    if (level >= s_log_level) {
+        debug_print("[%s]: ", get_level_nameA(level));
+
+        // Format the input string
+        va_list args;
+        va_start(args, fmt);
+
+        debug_printv(fmt, args);
+        va_end(args);
+    }
+}
+
+void log_print_w(int level, const wchar_t * fmt, ...)
+{
+    if (level >= s_log_level) {
+        debug_print_w(L"[%s]: ", get_level_nameW(level));
+
+        // Format the input string
+        va_list args;
+        va_start(args, fmt);
+
+        debug_printv_w(fmt, args);
+        va_end(args);
+    }
+}
 
 #ifdef _UNICODE
 std::wstring Ansi2Unicode(const std::string & ansiStr)
