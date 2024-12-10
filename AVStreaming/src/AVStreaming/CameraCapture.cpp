@@ -904,36 +904,6 @@ int transform_video_format(AVFrame * src_frame, AVPixelFormat src_format,
     return ret;
 }
 
-int transform_audio_format(AVCodecContext * audioCodecCtx,
-                           AVFrame * src_frame, AVSampleFormat src_format,
-                           AVFrame * dest_frame, AVSampleFormat dest_format)
-{
-    int ret = 0;
-
-    // 初始化 SwrContext 用于样本格式转换
-    SwrContext * swr_ctx = swr_alloc_set_opts(
-        NULL,
-        audioCodecCtx->channel_layout,
-        audioCodecCtx->sample_fmt,
-        audioCodecCtx->sample_rate,
-        src_frame->channel_layout,
-        (AVSampleFormat)src_frame->format,
-        src_frame->sample_rate,
-        0, NULL);
-    if (swr_ctx == NULL)
-        return -1;
-
-    // 转换 PCM 数据到 AAC 帧
-    ret = swr_convert(swr_ctx, dest_frame->data,
-                      dest_frame->nb_samples,
-                      (const uint8_t **)src_frame->data,
-                      src_frame->nb_samples);
-
-    // 释放 SwrContext
-    swr_free(&swr_ctx);
-    return ret;
-}
-
 int CCameraCapture::avcodec_encode_video_frame(AVFormatContext * outputFormatCtx,
                                                AVCodecContext * videoCodecCtx,
                                                AVFrame * srcFrame, AVPixelFormat src_format,
@@ -983,6 +953,9 @@ int CCameraCapture::avcodec_encode_video_frame(AVFormatContext * outputFormatCtx
         if (ret == 0) {
             ret = av_interleaved_write_frame(outputFormatCtx, videoPacket);
             //ret = av_write_frame(outputFormatCtx, videoPacket);
+            if (ret < 0) {
+                debug_print("保存编码器视频帧时出错\n");
+            }
             break;
         }
         else if (ret == AVERROR(EAGAIN)) {
@@ -1000,6 +973,70 @@ int CCameraCapture::avcodec_encode_video_frame(AVFormatContext * outputFormatCtx
     return ret;
 }
 
+int transform_audio_format(AVCodecContext * audioCodecCtx,
+                           AVFrame * src_frame, AVSampleFormat src_format,
+                           AVFrame * dest_frame, AVSampleFormat dest_format)
+{
+    int ret = 0;
+#if 1
+    SwrContext * swr_ctx = swr_alloc();
+    if (swr_ctx == NULL) {
+        debug_print("Could not allocate SwrContext\n");
+        return -1;
+    }
+
+    // 配置 SwrContext
+    ret = av_opt_set_int(swr_ctx, "in_channel_count",   src_frame->channels, 0);
+    ret = av_opt_set_int(swr_ctx, "out_channel_count",  dest_frame->channels, 0);
+    ret = av_opt_set_int(swr_ctx, "in_channel_layout",  AV_CH_LAYOUT_STEREO, 0);
+    ret = av_opt_set_int(swr_ctx, "out_channel_layout", AV_CH_LAYOUT_STEREO, 0);
+    ret = av_opt_set_int(swr_ctx, "in_sample_rate",  44100, 0);
+    ret = av_opt_set_int(swr_ctx, "out_sample_rate", 48000, 0);
+    ret = av_opt_set_sample_fmt(swr_ctx, "in_sample_fmt",  AV_SAMPLE_FMT_S16,  0);
+    ret = av_opt_set_sample_fmt(swr_ctx, "out_sample_fmt", AV_SAMPLE_FMT_FLTP, 0);
+
+    ret = swr_init(swr_ctx);
+    if (ret < 0) {
+        debug_print("Could not initialize SwrContext\n");
+        swr_free(&swr_ctx);
+        return -1;
+    }
+
+    // 执行格式转换
+    ret = swr_convert_frame(swr_ctx, dest_frame, src_frame);
+    if (ret < 0) {
+        debug_print("Error converting PCM_S16LE to FLTP\n");
+        swr_free(&swr_ctx);
+        return -1;
+    }
+
+    swr_free(&swr_ctx);
+#else
+    // 初始化 SwrContext 用于样本格式转换
+    SwrContext * swr_ctx = swr_alloc_set_opts(
+        NULL,
+        audioCodecCtx->channel_layout,
+        dest_format,
+        audioCodecCtx->sample_rate,
+        src_frame->channel_layout,
+        src_format,
+        src_frame->sample_rate,
+        0, NULL);
+    if (swr_ctx == NULL)
+        return -1;
+
+    // 转换 PCM 数据到 AAC 帧
+    ret = swr_convert(swr_ctx, dest_frame->data,
+                      dest_frame->nb_samples,
+                      (const uint8_t **)src_frame->data,
+                      src_frame->nb_samples);
+
+    // 释放 SwrContext
+    swr_free(&swr_ctx);
+#endif
+    return ret;
+}
+
 int CCameraCapture::avcodec_encode_audio_frame(AVFormatContext * outputFormatCtx,
                                                AVCodecContext * audioCodecCtx,
                                                AVFrame * srcFrame, AVSampleFormat src_format,
@@ -1013,14 +1050,15 @@ int CCameraCapture::avcodec_encode_audio_frame(AVFormatContext * outputFormatCtx
         return -1;
     }
 
-    //ret = av_frame_copy_props(destFrame, srcFrame);
+    ret = av_frame_copy_props(destFrame, srcFrame);
 
     destFrame->channels  = audioCodecCtx->channels;
     destFrame->sample_rate = audioCodecCtx->sample_rate;
     destFrame->channel_layout = audioCodecCtx->channel_layout;
-    destFrame->nb_samples = srcFrame->nb_samples;
-    //destFrame->pkt_duration = srcFrame->pkt_duration;
-    //destFrame->pkt_size = srcFrame->pkt_size;
+    //destFrame->nb_samples = srcFrame->nb_samples;
+    destFrame->nb_samples = audioCodecCtx->frame_size;
+    destFrame->pkt_duration = srcFrame->pkt_duration;
+    destFrame->pkt_size = audioCodecCtx->frame_size;
     destFrame->format = (int)dest_format;
 
     // 为 AAC 格式的 AVFrame 分配内存
@@ -1049,8 +1087,12 @@ int CCameraCapture::avcodec_encode_audio_frame(AVFormatContext * outputFormatCtx
         fSmartPtr<AVPacket> audioPacket = av_packet_alloc();
         ret = avcodec_receive_packet(audioCodecCtx, audioPacket);
         if (ret == 0) {
+            audioPacket->stream_index = 1;
             ret = av_interleaved_write_frame(outputFormatCtx, audioPacket);
             //ret = av_write_frame(outputFormatCtx, audioPacket);
+            if (ret < 0) {
+                debug_print("保存编码器音频帧时出错\n");
+            }
             break;
         }
         else if (ret == AVERROR(EAGAIN)) {
@@ -1231,6 +1273,8 @@ int CCameraCapture::ffmpeg_test()
     inputAudioCodecCtx->codec_type = AVMEDIA_TYPE_AUDIO;
     inputAudioCodecCtx->channels = audioCodecParams->channels;
     inputAudioCodecCtx->sample_rate = audioCodecParams->sample_rate;
+    // 麦克风应该是单声道的, 备选值：AV_CH_LAYOUT_STEREO
+    //inputAudioCodecCtx->channel_layout = audioCodecParams->channel_layout;
     inputAudioCodecCtx->channel_layout = AV_CH_LAYOUT_STEREO;
     inputAudioCodecCtx->time_base = audio_time_base;
     // AV_SAMPLE_FMT_S16 (1)
@@ -1296,11 +1340,14 @@ int CCameraCapture::ffmpeg_test()
     AVCodec * outputAudioCodec = avcodec_find_encoder(AV_CODEC_ID_AAC);
     fSmartPtr<AVCodecContext> outputAudioCodecCtx = avcodec_alloc_context3(outputAudioCodec);
 
-    outputAudioCodecCtx->bit_rate = 128000;
+    audio_time_base.num = 1;
+    audio_time_base.den = 48000;
+
+    outputAudioCodecCtx->bit_rate = 160000;
     outputAudioCodecCtx->codec_id = AV_CODEC_ID_AAC;
     outputAudioCodecCtx->codec_type = AVMEDIA_TYPE_AUDIO;
-    outputAudioCodecCtx->channels = audioCodecParams->channels;
-    outputAudioCodecCtx->sample_rate = audioCodecParams->sample_rate;
+    outputAudioCodecCtx->channels = 2;
+    outputAudioCodecCtx->sample_rate = 48000;
     outputAudioCodecCtx->channel_layout = AV_CH_LAYOUT_STEREO;
     outputAudioCodecCtx->time_base = audio_time_base;
     outputAudioCodecCtx->sample_fmt = AV_SAMPLE_FMT_FLTP;
@@ -1351,7 +1398,7 @@ int CCameraCapture::ffmpeg_test()
     bool isExit = false;
     while (1) {
         // Video
-        while (0) {
+        {
             fSmartPtr<AVPacket> videoPacket = av_packet_alloc();
             ret = av_read_frame(inputVideoFormatCtx, videoPacket);
             if (ret < 0)
@@ -1374,7 +1421,10 @@ int CCameraCapture::ffmpeg_test()
                     if (ret == 0) {
                         ret = av_frame_make_writable(frame);
                         nFrameCount++;
-                        if (nFrameCount > 100) {
+                        if ((nFrameCount % 5) == 4) {
+                            //ret = avformat_flush(outputFormatCtx);
+                        }
+                        if (nFrameCount > 50) {
                             isExit = true;
                             break;
                         }
@@ -1391,7 +1441,6 @@ int CCameraCapture::ffmpeg_test()
                                                               outputVideoCodecCtx->pix_fmt);
                         if (ret2 < 0 && ret2 != AVERROR(EAGAIN)) {
                             isExit = true;
-                            break;
                         }
                         break;
                     }
@@ -1417,47 +1466,56 @@ int CCameraCapture::ffmpeg_test()
             break;
 
         // Audio
-        while (1) {
+        if (1) {
             fSmartPtr<AVPacket> audioPacket = av_packet_alloc();
             ret = av_read_frame(inputAudioFormatCtx, audioPacket);
-            if (ret < 0)
+            if (ret < 0) {
+                isExit = true;
                 break;
+            }
             if (audioPacket->stream_index == audioStreamIndex) {
                 // 输入音频解码
-                av_packet_rescale_ts(audioPacket, inputAudioFormatCtx->streams[videoStreamIndex]->time_base,
+                av_packet_rescale_ts(audioPacket, inputAudioFormatCtx->streams[audioStreamIndex]->time_base,
                                      outputAudioStream->time_base);
+                //av_packet_rescale_ts(audioPacket, inputVideoFormatCtx->streams[videoStreamIndex]->time_base,
+                //                     outputVideoStream->time_base);
                 fSmartPtr<AVFrame> frame = av_frame_alloc();
                 int ret = avcodec_send_packet(inputAudioCodecCtx, audioPacket);
                 if (ret < 0) {
                     debug_print("发送音频数据包到解码器时出错\n");
                     break;
                 }
-                while (ret >= 0) {
+                while (1) {
                     ret = avcodec_receive_frame(inputAudioCodecCtx, frame);
-                    if (ret == 0)
-                        break;
-                    if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
-                        break;
-                    } else if (ret < 0) {
-                        debug_print("从解码器接收音频帧时出错\n");
+                    if (ret == 0) {
+                        // 将编码后的音频帧写入输出文件
+                        //frame->pts = av_rescale_q(frame->pts, inputAudioCodecCtx->time_base, outputAudioStream->time_base);
+                        //frame->pkt_dts = frame->pts;
+                        //frame->pkt_duration = av_rescale_q(1, inputAudioCodecCtx->time_base, outputAudioStream->time_base);
+                        if (frame->pts == AV_NOPTS_VALUE) {
+                            frame->pts = frame->best_effort_timestamp;
+                        }
+                        frame->pkt_dts = frame->pts;
+
+                        int ret2 = avcodec_encode_audio_frame(outputFormatCtx, outputAudioCodecCtx,
+                                                              frame, inputAudioCodecCtx->sample_fmt,
+                                                              outputAudioCodecCtx->sample_fmt);
+                        if (ret2 < 0 && ret2 != AVERROR(EAGAIN)) {
+                            isExit = true;
+                        }
                         break;
                     }
-                }
-                // 将编码后的音频帧写入输出文件
-                //frame->pts = av_rescale_q(frame->pts, inputAudioCodecCtx->time_base, outputAudioStream->time_base);
-                //frame->pkt_dts = frame->pts;
-                //frame->pkt_duration = av_rescale_q(1, inputAudioCodecCtx->time_base, outputAudioStream->time_base);
-                if (frame->pts == AV_NOPTS_VALUE) {
-                    frame->pts = frame->best_effort_timestamp;
-                }
-                frame->pkt_dts = frame->pts;
-
-                int ret2 = avcodec_encode_audio_frame(outputFormatCtx, outputAudioCodecCtx,
-                                                      frame, inputAudioCodecCtx->sample_fmt,
-                                                      outputAudioCodecCtx->sample_fmt);
-                if (ret2 < 0 && ret2 != AVERROR(EAGAIN)) {
-                    isExit = true;
-                    break;
+                    else if (ret == AVERROR(EAGAIN)) {
+                        break;
+                    }
+                    else if (ret == AVERROR_EOF) {
+                        break;
+                    }
+                    else if (ret < 0) {
+                        debug_print("从解码器接收音频帧时出错\n");
+                        isExit = true;
+                        break;
+                    }
                 }
             }
         }
