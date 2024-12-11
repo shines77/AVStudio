@@ -51,7 +51,7 @@
     <ClInclude Include="..\..\..\src\AVStreaming\fSmartPtr.h">
       <Filter>src</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\src\AVStreaming\fPtrAlloc.h">
+    <ClInclude Include="..\..\..\src\AVStreaming\fAllocator.h">
       <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>

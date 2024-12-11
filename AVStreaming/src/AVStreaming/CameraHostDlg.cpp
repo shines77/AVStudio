@@ -193,7 +193,8 @@ bool CCameraHostDlg::StartCapture()
     }
 
     if (pCameraCapture_ != NULL) {
-        pCameraCapture_->ffmpeg_test();
+        //pCameraCapture_->ffmpeg_test();
+        pCameraCapture_->merge_video();
 
         CCameraCapture::PLAY_STATE playState = pCameraCapture_->GetPlayState();
         if (playState == CCameraCapture::PLAY_STATE::Paused) {

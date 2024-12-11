@@ -154,6 +154,7 @@ public:
     bool AttachToVideoWindow(HWND hwndPreview);
 
     int ffmpeg_test();
+    int merge_video();
 
     int ListVideoConfigures();
     int ListAudioConfigures();

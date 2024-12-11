@@ -16,3 +16,17 @@
 - [https://gitee.com/shines77/AVStudio]
 
 - [https://github.com/shines77/AVStudio]
+
+## 生成测试文件
+
+生成 H.264 视频文件：
+
+```bash
+ffmpeg -f lavfi -i testsrc=duration=10:size=640x480:rate=30 -c:v libx264 -pix_fmt yuv420p input_video.h264
+```
+
+生成 AAC 音频文件：
+
+```bash
+ffmpeg -f lavfi -i "sine=frequency=440:duration=10" -c:a aac input_audio.aac
+```
