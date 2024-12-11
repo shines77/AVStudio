@@ -906,7 +906,10 @@ int transform_video_format(AVFrame * src_frame, AVPixelFormat src_format,
 
 int CCameraCapture::avcodec_encode_video_frame(AVFormatContext * outputFormatCtx,
                                                AVCodecContext * videoCodecCtx,
-                                               AVFrame * srcFrame, AVPixelFormat src_format,
+                                               AVStream * inputVideoStream,
+                                               AVStream * outputVideoStream,
+                                               AVFrame * srcFrame, int frameIndex,
+                                               AVPixelFormat src_format,
                                                AVPixelFormat dest_format)
 {
     int ret;
@@ -924,6 +927,7 @@ int CCameraCapture::avcodec_encode_video_frame(AVFormatContext * outputFormatCtx
     destFrame->pkt_duration = srcFrame->pkt_duration;
     destFrame->pkt_size = srcFrame->pkt_size;
     destFrame->format = (int)dest_format;
+    destFrame->pict_type = AV_PICTURE_TYPE_NONE;
 
     // 为 YUV420P 格式的 AVFrame 分配内存
     ret = av_frame_get_buffer(destFrame, 32);
@@ -951,6 +955,25 @@ int CCameraCapture::avcodec_encode_video_frame(AVFormatContext * outputFormatCtx
         fSmartPtr<AVPacket> videoPacket = av_packet_alloc();
         ret = avcodec_receive_packet(videoCodecCtx, videoPacket);
         if (ret == 0) {
+            // See: https://www.cnblogs.com/leisure_chn/p/10584901.html
+            // See: https://www.cnblogs.com/leisure_chn/p/10584925.html
+            videoPacket->stream_index = outputVideoStream->index;
+            if (videoPacket->pts == AV_NOPTS_VALUE) {
+                // Write PTS
+                AVRational time_base = inputVideoStream->time_base;
+                // Duration between 2 frames (us)
+                double duration = (double)AV_TIME_BASE / av_q2d(inputVideoStream->r_frame_rate);
+                // Parameters
+                videoPacket->pts = (int64_t)((double)(frameIndex * duration) / (double)(av_q2d(time_base) * AV_TIME_BASE));
+                videoPacket->dts = videoPacket->pts;
+                videoPacket->duration = (int64_t)((double)duration / (double)(av_q2d(time_base) * AV_TIME_BASE));
+            }
+            else {
+                //if (videoPacket->duration == 0)
+                //    videoPacket->duration = 1;
+                av_packet_rescale_ts(videoPacket, videoCodecCtx->time_base, outputVideoStream->time_base);
+                debug_print("videoPacket->duration = %d\n", videoPacket->duration);
+            }
             ret = av_interleaved_write_frame(outputFormatCtx, videoPacket);
             //ret = av_write_frame(outputFormatCtx, videoPacket);
             if (ret < 0) {
@@ -1039,7 +1062,10 @@ int transform_audio_format(AVCodecContext * audioCodecCtx,
 
 int CCameraCapture::avcodec_encode_audio_frame(AVFormatContext * outputFormatCtx,
                                                AVCodecContext * audioCodecCtx,
-                                               AVFrame * srcFrame, AVSampleFormat src_format,
+                                               AVStream * inputAudioStream,
+                                               AVStream * outputAudioStream,
+                                               AVFrame * srcFrame, int frameIndex,
+                                               AVSampleFormat src_format,
                                                AVSampleFormat dest_format)
 {
     int ret;
@@ -1087,7 +1113,28 @@ int CCameraCapture::avcodec_encode_audio_frame(AVFormatContext * outputFormatCtx
         fSmartPtr<AVPacket> audioPacket = av_packet_alloc();
         ret = avcodec_receive_packet(audioCodecCtx, audioPacket);
         if (ret == 0) {
-            audioPacket->stream_index = 1;
+            // See: https://www.cnblogs.com/leisure_chn/p/10584901.html
+            // See: https://www.cnblogs.com/leisure_chn/p/10584925.html
+            audioPacket->stream_index = outputAudioStream->index;
+            if (audioPacket->pts == AV_NOPTS_VALUE) {
+                // Write PTS
+                AVRational time_base = inputAudioStream->time_base;
+                // Duration between 2 frames (us)
+                double duration = (double)AV_TIME_BASE / av_q2d(inputAudioStream->r_frame_rate);
+                // Parameters
+                audioPacket->pts = (int64_t)((double)(frameIndex * duration) / (double)(av_q2d(time_base) * AV_TIME_BASE));
+                audioPacket->dts = audioPacket->pts;
+                audioPacket->duration = (int64_t)((double)duration / (double)(av_q2d(time_base) * AV_TIME_BASE));
+            }
+            else {
+                //if (audioPacket->duration == 0)
+                //    audioPacket->duration = 1;
+                av_packet_rescale_ts(audioPacket, audioCodecCtx->time_base, outputAudioStream->time_base);
+                debug_print("audioPacket->duration = %d\n", audioPacket->duration);
+                audioPacket->pts = audioPacket->pts / 10;
+                audioPacket->dts = audioPacket->pts;
+                //audioPacket->duration = audioPacket->duration * 10;
+            }
             ret = av_interleaved_write_frame(outputFormatCtx, audioPacket);
             //ret = av_write_frame(outputFormatCtx, audioPacket);
             if (ret < 0) {
@@ -1230,11 +1277,19 @@ int CCameraCapture::ffmpeg_test()
     }
 
     // 获取视频和音频的编解码器参数
+    AVStream * inputVideoStream = inputVideoFormatCtx->streams[videoStreamIndex];
+    AVStream * inputAudioStream = inputAudioFormatCtx->streams[audioStreamIndex];
+
     AVCodecParameters * videoCodecParams = inputVideoFormatCtx->streams[videoStreamIndex]->codecpar;
     AVCodecParameters * audioCodecParams = inputAudioFormatCtx->streams[audioStreamIndex]->codecpar;
 
     // 查找视频的编解码器
     AVCodec * inputVideoCodec = avcodec_find_decoder(videoCodecParams->codec_id);
+    if (inputVideoCodec == NULL) {
+        debug_print("查找输入视频解码器 codec 失败\n");
+        return -1;
+    }
+
     fSmartPtr<AVCodecContext> inputVideoCodecCtx = avcodec_alloc_context3(inputVideoCodec);
 
     AVRational time_base = {1, 30};
@@ -1246,8 +1301,8 @@ int CCameraCapture::ffmpeg_test()
     inputVideoCodecCtx->codec_type = AVMEDIA_TYPE_VIDEO;
     inputVideoCodecCtx->width = videoCodecParams->width;
     inputVideoCodecCtx->height = videoCodecParams->height;
-    inputVideoCodecCtx->time_base = time_base;
-    inputVideoCodecCtx->framerate = framerate;
+    inputVideoCodecCtx->time_base = av_inv_q(inputVideoStream->r_frame_rate);
+    inputVideoCodecCtx->framerate = inputVideoStream->r_frame_rate;
     inputVideoCodecCtx->gop_size = 12;
     inputVideoCodecCtx->max_b_frames = 0;
     // AV_PIX_FMT_YUYV422 (1)
@@ -1264,6 +1319,10 @@ int CCameraCapture::ffmpeg_test()
 
     // 查找音频的编解码器
     AVCodec * inputAudioCodec = avcodec_find_decoder(audioCodecParams->codec_id);
+    if (inputAudioCodec == NULL) {
+        debug_print("查找输入音频解码器 codec 失败\n");
+        return -1;
+    }
     fSmartPtr<AVCodecContext> inputAudioCodecCtx = avcodec_alloc_context3(inputAudioCodec);
 
     AVRational audio_time_base = { 1, audioCodecParams->sample_rate };
@@ -1297,6 +1356,7 @@ int CCameraCapture::ffmpeg_test()
     // 打开视频的编解码器
     AVCodec * outputVideoCodec = avcodec_find_encoder(AV_CODEC_ID_H264);
     if (outputVideoCodec == NULL) {
+        debug_print("查找输出视频解码器 codec 失败\n");
         return -1;
     }
     fSmartPtr<AVCodecContext> outputVideoCodecCtx = avcodec_alloc_context3(outputVideoCodec);
@@ -1308,8 +1368,8 @@ int CCameraCapture::ffmpeg_test()
     outputVideoCodecCtx->height = videoCodecParams->height;
     outputVideoCodecCtx->time_base = time_base;
     outputVideoCodecCtx->framerate = framerate;
-    outputVideoCodecCtx->gop_size = 12;
-    outputVideoCodecCtx->max_b_frames = 1;
+    outputVideoCodecCtx->gop_size = 30;
+    outputVideoCodecCtx->max_b_frames = 3;
     outputVideoCodecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
     //outputVideoCodecCtx->pix_fmt = AV_PIX_FMT_NV12;
 
@@ -1323,7 +1383,7 @@ int CCameraCapture::ffmpeg_test()
     if (outputVideoCodecCtx->codec_id == AV_CODEC_ID_H264) {
         result = av_opt_set(outputVideoCodecCtx->priv_data, "profile", "main", 0);
         // 0 latency
-        result = av_opt_set(outputVideoCodecCtx->priv_data, "tune", "zerolatency",0);
+        //result = av_opt_set(outputVideoCodecCtx->priv_data, "tune", "zerolatency",0);
     }
 
     result = avcodec_open2(outputVideoCodecCtx.ptr(), outputVideoCodec, NULL);
@@ -1338,6 +1398,10 @@ int CCameraCapture::ffmpeg_test()
 
     // 打开音频的编解码器
     AVCodec * outputAudioCodec = avcodec_find_encoder(AV_CODEC_ID_AAC);
+    if (outputAudioCodec == NULL) {
+        debug_print("查找输出音频解码器 codec 失败\n");
+        return -1;
+    }
     fSmartPtr<AVCodecContext> outputAudioCodecCtx = avcodec_alloc_context3(outputAudioCodec);
 
     audio_time_base.num = 1;
@@ -1362,18 +1426,46 @@ int CCameraCapture::ffmpeg_test()
         return -1;
     }
 
-    // 添加视频和音频流
+    // 添加视频流
     AVStream * outputVideoStream = avformat_new_stream(outputFormatCtx, outputVideoCodec);
+
+    outputVideoStream->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+    outputVideoStream->codecpar->codec_id = outputVideoCodec->id;
+
+    // 复制视频编解码器参数
+    //avcodec_parameters_copy(outputVideoStream->codecpar, videoCodecParams);
+    avcodec_parameters_from_context(outputVideoStream->codecpar, outputVideoCodecCtx);
+    // 注：读取视频文件时使用
+    //avcodec_parameters_to_context(outputVideoCodecCtx, outputVideoStream->codecpar);
+
+    //outputVideoStream->codec = outputVideoCodecCtx->codec;
+    outputVideoStream->id    = outputVideoCodecCtx->codec_id;
+
+    // 添加音频流
     AVStream * outputAudioStream = avformat_new_stream(outputFormatCtx, outputAudioCodec);
 
-    // 复制视频和音频的编解码器参数
-    //avcodec_parameters_copy(outputVideoStream->codecpar, videoCodecParams);
+    outputAudioStream->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
+    outputAudioStream->codecpar->codec_id = outputAudioCodec->id;
+
+    // 复制音频的编解码器参数
     //avcodec_parameters_copy(outputAudioStream->codecpar, audioCodecParams);
-
-    avcodec_parameters_from_context(outputVideoStream->codecpar, outputVideoCodecCtx);
     avcodec_parameters_from_context(outputAudioStream->codecpar, outputAudioCodecCtx);
+    // 注：读取音频文件时使用
+    //avcodec_parameters_to_context(outputAudioCodecCtx, outputAudioStream->codecpar);
 
-    outputFormatCtx->bit_rate = 2000000;
+    //outputAudioStream->codec = outputAudioCodecCtx->codec;
+    outputAudioStream->id    = outputAudioCodecCtx->codec_id;
+
+    //outputVideoStream->time_base = outputVideoCodecCtx->time_base;
+    //outputAudioStream->time_base = outputAudioCodecCtx->time_base;
+
+#if 0
+    outputFormatCtx->video_codec = outputVideoCodec;
+    outputFormatCtx->video_codec_id = outputVideoCodec->id;
+
+    outputFormatCtx->audio_codec = outputAudioCodec;
+    outputFormatCtx->audio_codec_id = outputAudioCodec->id;
+#endif
 
     // 打开输出文件
     if (!(outputFormatCtx->oformat->flags & AVFMT_NOFILE)) {
@@ -1394,17 +1486,20 @@ int CCameraCapture::ffmpeg_test()
     // 读取和编码视频帧
 
     int ret;
-    int nFrameCount = 0;
+    int nVideoFrameCnt = 0;
+    int nAudioFrameCnt = 0;
     bool isExit = false;
     while (1) {
         // Video
-        {
+        if (1) {
             fSmartPtr<AVPacket> videoPacket = av_packet_alloc();
             ret = av_read_frame(inputVideoFormatCtx, videoPacket);
-            if (ret < 0)
+            if (ret < 0) {
+                isExit = true;
                 break;
-            av_packet_rescale_ts(videoPacket, inputVideoFormatCtx->streams[videoStreamIndex]->time_base,
-                                 outputVideoStream->time_base);
+            }
+            av_packet_rescale_ts(videoPacket, inputVideoStream->time_base,
+                                inputVideoCodecCtx->time_base);
             if (videoPacket->stream_index == videoStreamIndex) {
                 // 输入视频解码
                 ret = avcodec_send_packet(inputVideoCodecCtx, videoPacket);
@@ -1420,27 +1515,32 @@ int CCameraCapture::ffmpeg_test()
                     ret = avcodec_receive_frame(inputVideoCodecCtx, frame);
                     if (ret == 0) {
                         ret = av_frame_make_writable(frame);
-                        nFrameCount++;
-                        if ((nFrameCount % 5) == 4) {
-                            //ret = avformat_flush(outputFormatCtx);
-                        }
-                        if (nFrameCount > 50) {
-                            isExit = true;
-                            break;
-                        }
                         // 将编码后的视频帧写入输出文件
                         //frame->pts = av_rescale_q(frame->pts, inputVideoCodecCtx->time_base, outputVideoStream->time_base);
                         //frame->pts = nFrameCount;
                         if (frame->pts == AV_NOPTS_VALUE) {
                             frame->pts = frame->best_effort_timestamp;
+                            frame->pkt_dts = frame->pts;
+                            frame->pkt_duration = av_rescale_q(1, inputVideoStream->time_base, outputVideoStream->time_base);
                         }
-                        frame->pkt_dts = frame->pts;
-                        //frame->pkt_duration = av_rescale_q(1, inputVideoCodecCtx->time_base, outputVideoStream->time_base);
+
                         int ret2 = avcodec_encode_video_frame(outputFormatCtx, outputVideoCodecCtx,
-                                                              frame, inputVideoCodecCtx->pix_fmt,
+                                                              inputVideoStream, outputVideoStream,
+                                                              frame, nVideoFrameCnt,
+                                                              inputVideoCodecCtx->pix_fmt,
                                                               outputVideoCodecCtx->pix_fmt);
                         if (ret2 < 0 && ret2 != AVERROR(EAGAIN)) {
                             isExit = true;
+                        }
+                        else {
+                            if (ret2 != AVERROR(EAGAIN)) {
+                                nVideoFrameCnt++;
+                                debug_print("nFrameCount = %d\n", nVideoFrameCnt + 1);
+                                if (nVideoFrameCnt > 100) {
+                                    isExit = true;
+                                    break;
+                                }
+                            }
                         }
                         break;
                     }
@@ -1475,10 +1575,8 @@ int CCameraCapture::ffmpeg_test()
             }
             if (audioPacket->stream_index == audioStreamIndex) {
                 // 输入音频解码
-                av_packet_rescale_ts(audioPacket, inputAudioFormatCtx->streams[audioStreamIndex]->time_base,
-                                     outputAudioStream->time_base);
-                //av_packet_rescale_ts(audioPacket, inputVideoFormatCtx->streams[videoStreamIndex]->time_base,
-                //                     outputVideoStream->time_base);
+                av_packet_rescale_ts(audioPacket, inputAudioStream->time_base,
+                                     inputAudioCodecCtx->time_base);
                 fSmartPtr<AVFrame> frame = av_frame_alloc();
                 int ret = avcodec_send_packet(inputAudioCodecCtx, audioPacket);
                 if (ret < 0) {
@@ -1494,14 +1592,27 @@ int CCameraCapture::ffmpeg_test()
                         //frame->pkt_duration = av_rescale_q(1, inputAudioCodecCtx->time_base, outputAudioStream->time_base);
                         if (frame->pts == AV_NOPTS_VALUE) {
                             frame->pts = frame->best_effort_timestamp;
+                            frame->pkt_dts = frame->pts;
+                            frame->pkt_duration = av_rescale_q(1, inputVideoStream->time_base, outputVideoStream->time_base);
                         }
-                        frame->pkt_dts = frame->pts;
 
                         int ret2 = avcodec_encode_audio_frame(outputFormatCtx, outputAudioCodecCtx,
-                                                              frame, inputAudioCodecCtx->sample_fmt,
+                                                              inputAudioStream, outputAudioStream,
+                                                              frame, nAudioFrameCnt,
+                                                              inputAudioCodecCtx->sample_fmt,
                                                               outputAudioCodecCtx->sample_fmt);
                         if (ret2 < 0 && ret2 != AVERROR(EAGAIN)) {
                             isExit = true;
+                        }
+                        else {
+                            if (ret2 != AVERROR(EAGAIN)) {
+                                nAudioFrameCnt++;
+                                debug_print("nAudioCount = %d\n", nAudioFrameCnt + 1);
+                                if (nAudioFrameCnt > 50) {
+                                    isExit = true;
+                                    break;
+                                }
+                            }
                         }
                         break;
                     }
@@ -1526,6 +1637,10 @@ int CCameraCapture::ffmpeg_test()
     // 写入文件尾
     ret = av_write_trailer(outputFormatCtx);
     ret = avformat_flush(outputFormatCtx);
+
+    if (outputFormatCtx->pb) {
+        avio_close(outputFormatCtx->pb);
+    }
 
     // 释放资源
     //avformat_close_input(&inputVideoFormatCtx);

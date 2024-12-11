@@ -103,6 +103,7 @@ struct CamAudioConfig
 struct AVFormatContext;
 struct AVCodecContext;
 struct AVFrame;
+struct AVStream;
 
 enum AVPixelFormat;
 enum AVSampleFormat;
@@ -194,11 +195,17 @@ protected:
 
     int avcodec_encode_video_frame(AVFormatContext * outputFormatCtx,
                                    AVCodecContext * videoCodecCtx,
-                                   AVFrame * srcFrame, AVPixelFormat src_format,
+                                   AVStream * inputVideoStream,
+                                   AVStream * outputVideoStream,
+                                   AVFrame * srcFrame, int frameIndex,
+                                   AVPixelFormat src_format,
                                    AVPixelFormat dest_format);
     int avcodec_encode_audio_frame(AVFormatContext * outputFormatCtx,
                                    AVCodecContext * audioCodecCtx,
-                                   AVFrame * srcFrame, AVSampleFormat src_format,
+                                   AVStream * inputAudioStream,
+                                   AVStream * outputAudioStream,
+                                   AVFrame * srcFrame, int frameIndex,
+                                   AVSampleFormat src_format,
                                    AVSampleFormat dest_format);
 
 private:
