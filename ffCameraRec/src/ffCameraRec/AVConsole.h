@@ -336,7 +336,7 @@ protected:
     }
 
     bool try_write_log(int level) {
-        if (can_write(level)) {
+        if (can_write(level) && writer_.is_stream_writer()) {
             write_header(level);
             return true;
         }
@@ -431,6 +431,12 @@ struct BasicWriter
     typedef CharType                     char_type;
     typedef std::basic_string<char_type> string_type;
 
+    static const bool kIsStreamWriter = false;
+
+    bool is_stream_writer() const {
+        return kIsStreamWriter;
+    }
+
     int open(const string_type & filename, bool onlyAppend = true) {
         /* Do nothing ! */
         return FileStatus::Succeeded;
@@ -459,10 +465,16 @@ struct BasicWriter
 };
 
 template <typename CharType = char>
-struct BasicFileWriter
+struct BasicStreamWriter
 {
     typedef CharType                     char_type;
     typedef std::basic_string<char_type> string_type;
+
+    static const bool kIsStreamWriter = true;
+
+    bool is_stream_writer() const {
+        return kIsStreamWriter;
+    }
 
     int open(const string_type & filename, bool onlyAppend = true) {
         /* Do nothing ! */
@@ -517,7 +529,7 @@ struct StdWriter : public BasicWriter<char>
     }
 };
 
-struct StdFileWriter : public BasicFileWriter<char>
+struct StdFileWriter : public BasicStreamWriter<char>
 {
     StdFileWriter() {
         //
@@ -586,7 +598,7 @@ struct StdFileWriter : public BasicFileWriter<char>
         return self;
     }
 
-    std::ofstream   out_file_;
+    std::ofstream out_file_;
 };
 
 using Console = ConsoleBase<ConsoleWriter, char>;

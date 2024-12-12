@@ -18,12 +18,11 @@ extern "C" {
 
 #include "AVConsole.h"
 
-int main(int argc, const char * argv[])
+void console_test()
 {
     av::StdConsole console;
     console.set_log_level(av::LogLevel::Info);
 
-    console.println("Hello world!");
     console.fatal("This a fatal message.");
     console.error("This a error message.");
     console.info("This a info message.");
@@ -63,6 +62,14 @@ int main(int argc, const char * argv[])
     if (file_log.try_verbose()) {
         file_log << "This a try verbose message." << std::endl;
     }
+}
+
+int main(int argc, const char * argv[])
+{
+    av::Console console;
+    console.println("Hello world!");
+
+    console_test();
 
     return 0;
 }
