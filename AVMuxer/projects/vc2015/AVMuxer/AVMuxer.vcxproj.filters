@@ -23,5 +23,8 @@
     <ClInclude Include="..\..\..\src\AVMuxer\AVConsole.h">
       <Filter>src</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\src\AVMuxer\CmdParser.h">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

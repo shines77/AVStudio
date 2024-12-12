@@ -606,3 +606,5 @@ using StdConsole = ConsoleBase<StdWriter, char>;
 using StdFileLog = ConsoleBase<StdFileWriter, char>;
 
 } // namespace av
+
+static av::Console console;

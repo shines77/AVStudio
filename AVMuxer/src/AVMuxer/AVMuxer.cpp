@@ -17,12 +17,24 @@ extern "C" {
 }
 
 #include "AVConsole.h"
+#include "CmdParser.h"
 
-int main()
+int main(int argc, char * argv[])
 {
-    av::Console console;
+    CmdParser cmd_parser(argc, argv);
+    cmd_parser.dump();
 
-    console.print("Hello world!\n");
+    if (cmd_parser.is_contains("v")) {
+        console.print("cmd_parser.find(\"v\") = %s\n", cmd_parser.find("v"));
+    }
+
+    if (cmd_parser.is_contains("a")) {
+        console.print("cmd_parser.find(\"a\") = %s\n", cmd_parser.find("a"));
+    }
+
+    if (cmd_parser.is_contains("Host")) {
+        console.print("cmd_parser.find(\"Host\") = %s\n", cmd_parser.find("Host"));
+    }
 
     return 0;
 }
