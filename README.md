@@ -30,3 +30,15 @@ ffmpeg -f lavfi -i testsrc=duration=10:size=640x480:rate=30 -c:v libx264 -pix_fm
 ```bash
 ffmpeg -f lavfi -i "sine=frequency=440:duration=10" -c:a aac input_audio.aac
 ```
+
+## 其他测试
+
+[CmdParser] 测试命令行参数：
+
+```bash
+## Windows
+.\AVMuxer.exe -v video.264 -a audio.acc test bbb --help
+
+## Linux
+./AVMuxer.exe -v video.264 -a audio.acc test bbb --help
+```
