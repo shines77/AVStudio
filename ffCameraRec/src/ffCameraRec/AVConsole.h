@@ -17,14 +17,16 @@ namespace av {
 struct LogLevel
 {
     enum {
-        Fatal,
+        // Must be start with 0
+        First = 0,
+        Fatal = First,
         Error,
         Warning,
         Info,
         Verbose,
-        Debug,      // output only in debug mode
-        Trace,      // output always
-        Maximum
+        Debug,      // Output only in debug mode
+        Trace,      // Output always
+        Last
     };
 };
 
@@ -39,6 +41,7 @@ struct FileStatus {
 
 struct FileState {
     enum {
+        Failed = -1,
         Unknown,
         Openning,
         Closed
@@ -67,11 +70,11 @@ public:
 
     static const bool kIsWideChar = (sizeof(CharType) > 1);
 
-    ConsoleBase() : level_(LogLevel::Info), fileState_(FileStatus::Unknown) {
+    ConsoleBase() : level_(LogLevel::Info), file_state_(FileStatus::Unknown) {
     }
 
     ConsoleBase(const std::string & filename, bool onlyAppend = true)
-        : level_(LogLevel::Info), fileState_(FileStatus::Unknown) {
+        : level_(LogLevel::Info), file_state_(FileStatus::Unknown) {
         open(filename, onlyAppend);
     }
     ~ConsoleBase() {
@@ -79,70 +82,89 @@ public:
         close();
     }
 
+    int get_log_level() const {
+        return level_;
+    }
+
+    void set_log_level(int level) {
+        if (level >= LogLevel::Fatal && level < LogLevel::Last) {
+            level_ = level;
+        }
+    }
+
+    bool is_open() const {
+        return (file_state_ == FileState::Openning);
+    }
+
+    std::string filename() const {
+        return filename_;
+    }
+
     int open(const std::string & filename, bool onlyAppend = true) {
         int state = FileState::Unknown;
         if (filename.empty()) {
             return state;
         }
-        std::string filename_tmp(filename);
-        str_to_lower(filename_tmp);
-        if (filename_tmp != filename_) {
-            flush();
-            close();
+        // If file is opened, close it.
+        if (is_open()) {
+            if (!filename_.empty()) {
+                std::string lower_filename1(filename);
+                std::string lower_filename2(filename_);
+                str_to_lower(lower_filename1);
+                str_to_lower(lower_filename2);
+                // If filename is same, skip to close.
+                if (lower_filename1 != lower_filename2) {
+                    flush();
+                    state = close();
+                    filename_ = "";
+                }
+            }
         }
-        if (fileState_ != FileState::Openning) {
+        if (!is_open()) {
             int status = writer_.open(filename, onlyAppend);
-            fileState_ = (status == FileStatus::Succeeded) ? FileState::Openning : FileState::Unknown;
+            state = (status == FileStatus::Succeeded || status == FileStatus::Opened) ?
+                     FileState::Openning : FileState::Failed;
+            file_state_ = state;
             filename_ = filename;
-            str_to_lower(filename_);
         }
         return state;
     }
 
     int close() {
         int state = FileState::Unknown;
-        if (fileState_ == FileState::Openning) {
+        if (is_open()) {
             writer_.flush();
             writer_.close();
-            fileState_ = FileState::Closed;
+            state = FileState::Closed;
+            file_state_ = state;
         }
         return state;
     }
 
     void flush() {
-        if (fileState_ == FileState::Openning) {
+        if (is_open()) {
             writer_.flush();
-        }
-    }
-
-    int getLogLevel() const {
-        return level_;
-    }
-
-    void setLogLevel(int level) {
-        if (level >= LogLevel::Fatal && level < LogLevel::Maximum) {
-            level_ = level;
         }
     }
 
     void fatal(const char_type * fmt, ...) {
         va_list args;
         va_start(args, fmt);
-        log_print_args(LogLevel::Fatal, fmt, args);
+        write_log_args(LogLevel::Fatal, fmt, args);
         va_end(args);
     }
 
     void error(const char_type * fmt, ...) {
         va_list args;
         va_start(args, fmt);
-        log_print_args(LogLevel::Error, fmt, args);
+        write_log_args(LogLevel::Error, fmt, args);
         va_end(args);
     }
 
     void warning(const char_type * fmt, ...) {
         va_list args;
         va_start(args, fmt);
-        log_print_args(LogLevel::Warning, fmt, args);
+        write_log_args(LogLevel::Warning, fmt, args);
         va_end(args);
     }
 
@@ -150,61 +172,61 @@ public:
         va_list args;
         va_start(args, fmt);
 
-        log_print_args(LogLevel::Info, fmt, args);
+        write_log_args(LogLevel::Info, fmt, args);
         va_end(args);
     }
 
     void verbose(const char_type * fmt, ...) {
         va_list args;
         va_start(args, fmt);
-        log_print_args(LogLevel::Verbose, fmt, args);
+        write_log_args(LogLevel::Verbose, fmt, args);
         va_end(args);
     }
 
     void debug(const char_type * fmt, ...) {
         va_list args;
         va_start(args, fmt);
-        log_print_args(LogLevel::Debug, fmt, args);
+        write_log_args(LogLevel::Debug, fmt, args);
         va_end(args);
     }
 
     void trace(const char_type * fmt, ...) {
         va_list args;
         va_start(args, fmt);
-        log_print_args(LogLevel::Trace, fmt, args);
+        write_log_args(LogLevel::Trace, fmt, args);
         va_end(args);
     }
 
-    bool can_output(int level) const {
+    bool can_write(int level) const {
         return (level != LogLevel::Trace) ? (level >= level_) : true;
     }
 
     bool try_fatal() {
-        return try_log_write(LogLevel::Fatal);
+        return try_write_log(LogLevel::Fatal);
     }
 
     bool try_error() {
-        return try_log_write(LogLevel::Error);
+        return try_write_log(LogLevel::Error);
     }
 
     bool try_warning() {
-        return try_log_write(LogLevel::Warning);
+        return try_write_log(LogLevel::Warning);
     }
 
     bool try_info() {
-        return try_log_write(LogLevel::Info);
+        return try_write_log(LogLevel::Info);
     }
 
     bool try_verbose() {
-        return try_log_write(LogLevel::Verbose);
+        return try_write_log(LogLevel::Verbose);
     }
 
     bool try_debug() {
-        return try_log_write(LogLevel::Debug);
+        return try_write_log(LogLevel::Debug);
     }
 
     bool try_trace() {
-        return try_log_write(LogLevel::Trace);
+        return try_write_log(LogLevel::Trace);
     }
 
     void new_line() {
@@ -215,7 +237,7 @@ public:
         va_list args;
         va_start(args, fmt);
 
-        output_args(fmt, args);
+        write_args(fmt, args);
         va_end(args);
     }
 
@@ -223,7 +245,7 @@ public:
         va_list args;
         va_start(args, fmt);
 
-        output_args(fmt, args);
+        write_args(fmt, args);
         va_end(args);
 
         new_line();
@@ -249,7 +271,29 @@ public:
     }
 
 protected:
-    const char * getLevelName(int level) {
+    const char * level_names[8] = {
+        "Fatal",
+        "Error",
+        "Warning",
+        "Info",
+        "Verbose",
+        "Debug",
+        "Trace",
+        "Unknown"
+    };
+
+    const wchar_t * level_names_w[8] = {
+        L"Fatal",
+        L"Error",
+        L"Warning",
+        L"Info",
+        L"Verbose",
+        L"Debug",
+        L"Trace",
+        L"Unknown"
+    };
+
+    const char * get_level_name(int level) {
         switch (level) {
             case LogLevel::Fatal:
                 return "Fatal";
@@ -270,7 +314,7 @@ protected:
         }
     }
 
-    const wchar_t * getLevelNameW(int level) {
+    const wchar_t * get_level_nameW(int level) {
         switch (level) {
             case LogLevel::Fatal:
                 return L"Fatal";
@@ -291,19 +335,36 @@ protected:
         }
     }
 
-    bool try_log_write(int level) {
-        if (can_output(level)) {
-            output_header(level);
+    bool try_write_log(int level) {
+        if (can_write(level)) {
+            write_header(level);
             return true;
         }
         return false;
     }
 
-    void output_direct(const char_type * text) {
-        writer_.print(text);
+    void write_header(int level) {
+#if 1
+        // Use array faster than switch version.
+        level = (level >= LogLevel::First) ? level : LogLevel::First;
+        level = (level <  LogLevel::Last)  ? level : LogLevel::Last;
+        if (kIsWideChar)
+            write((const char_type *)L"[%s]: ", (const char_type *)level_names_w[level]);
+        else
+            write((const char_type *)"[%s]: ", (const char_type *)level_names[level]);
+#else
+        if (kIsWideChar)
+            write((const char_type *)L"[%s]: ", (const char_type *)get_level_nameW(level));
+        else
+            write((const char_type *)"[%s]: ", (const char_type *)get_level_name(level));
+#endif
     }
 
-    void output_args(const char_type * fmt, va_list args) {
+    void write_direct(const char_type * text) {
+        writer_.write(text);
+    }
+
+    void write_args(const char_type * fmt, va_list args) {
         static const size_t kBufSize = 2048;
         static char_type szBuffer[kBufSize] = { 0 };
 
@@ -324,35 +385,28 @@ protected:
         // Ensure that the formatted string is NULL-terminated
         szBuffer[kBufSize - 1] = '\0';
 
-        writer_.print(szBuffer);
+        writer_.write(szBuffer);
     }
 
-    void output_header(int level) {
-        if (kIsWideChar)
-            output((const char_type *)L"[%s]: ", (const char_type *)getLevelNameW(level));
-        else
-            output((const char_type *)"[%s]: ", (const char_type *)getLevelName(level));
-    }
-
-    void output(const char_type * fmt, ...) {
+    void write(const char_type * fmt, ...) {
         va_list args;
         va_start(args, fmt);
-        output_args(fmt, args);
+        write_args(fmt, args);
         va_end(args);
     }
 
-    void log_print_args(int level, const char_type * fmt, va_list args) {
-        if (can_output(level)) {
-            output_header(level);
-            output_args(fmt, args);
+    void write_log_args(int level, const char_type * fmt, va_list args) {
+        if (can_write(level)) {
+            write_header(level);
+            write_args(fmt, args);
             new_line();
         }
     }
 
-    void log_print(int level, const char_type * fmt, ...) {
+    void write_log(int level, const char_type * fmt, ...) {
         va_list args;
         va_start(args, fmt);
-        log_print_args(level, fmt, args);
+        write_log_args(level, fmt, args);
         va_end(args);
     }
 
@@ -365,7 +419,7 @@ private:
 
 protected:
     int         level_;
-    int         fileState_;
+    int         file_state_;
     std::string filename_;
     std::string pattern_;
     writer_t    writer_;
@@ -384,7 +438,7 @@ struct BasicWriter
     void close() { /* Do nothing ! */ }
     void flush() { /* Do nothing ! */ }
 
-    void print(const char_type * text) { /* Do nothing ! */ }
+    void write(const char_type * text) { /* Do nothing ! */ }
     void new_line() { /* Do nothing ! */ }
 
     template <typename T>
@@ -417,7 +471,7 @@ struct BasicFileWriter
     void close() { /* Do nothing ! */ }
     void flush() { /* Do nothing ! */ }
 
-    void print(const char_type * text) { /* Do nothing ! */ }
+    void write(const char_type * text) { /* Do nothing ! */ }
     void new_line() { /* Do nothing ! */ }
 };
 
@@ -431,7 +485,7 @@ struct ConsoleWriter : public BasicWriter<char>
         //
     }
 
-    void print(const char * text) {
+    void write(const char * text) {
         ::printf(text);
     }
 
@@ -454,7 +508,7 @@ struct StdWriter : public BasicWriter<char>
         //
     }
 
-    void print(const char * text) {
+    void write(const char * text) {
         std::cout << text;
     }
 
@@ -481,7 +535,6 @@ struct StdFileWriter : public BasicFileWriter<char>
             else
                 out_file_.open(filename, std::ios::out | std::ios::trunc);
             if (out_file_.is_open()) {
-                filename_ = filename;
                 status = FileStatus::Succeeded;
             }
             else if (out_file_.rdstate() & std::ios::failbit) {
@@ -506,7 +559,7 @@ struct StdFileWriter : public BasicFileWriter<char>
         }
     }
 
-    void print(const char * text) {
+    void write(const char * text) {
         out_file_ << text;
     }
 
@@ -533,7 +586,6 @@ struct StdFileWriter : public BasicFileWriter<char>
         return self;
     }
 
-    std::string     filename_;
     std::ofstream   out_file_;
 };
 

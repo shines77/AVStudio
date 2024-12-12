@@ -18,9 +18,10 @@ extern "C" {
 
 #include "AVConsole.h"
 
-int main(int argc, char * [] argv)
+int main(int argc, const char * argv[])
 {
     av::StdConsole console;
+    console.set_log_level(av::LogLevel::Info);
 
     console.println("Hello world!");
     console.fatal("This a fatal message.");
@@ -42,6 +43,7 @@ int main(int argc, char * [] argv)
     }
 
     av::StdFileLog file_log("test.log", false);
+    file_log.set_log_level(av::LogLevel::Info);
 
     file_log.println("Hello world!");
     file_log.fatal("This a fatal message.");
