@@ -20,9 +20,9 @@ extern "C" {
 
 int main()
 {
-    AVConsole av_console;
+    av::Console console;
 
-    av_console.print("Hello world!\n");
+    console.print("Hello world!\n");
 
     return 0;
 }
