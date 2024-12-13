@@ -47,12 +47,12 @@ public:
             return "";
     }
 
-    bool is_contains(const std::string & key) const {
+    bool has_key(const std::string & key) const {
         auto iter = dict_.find(key);
         return (iter != dict_.end());
     }
 
-    std::string & find(const std::string & key) {
+    std::string & get_value(const std::string & key) {
         auto iter = dict_.find(key);
         if (iter != dict_.end())
             return iter->second;
@@ -60,7 +60,7 @@ public:
             return empty_vlaue;
     }
 
-    const std::string & find(const std::string & key) const {
+    const std::string & get_value(const std::string & key) const {
         const auto iter = dict_.find(key);
         if (iter != dict_.cend())
             return iter->second;
@@ -78,26 +78,32 @@ public:
     void dump() {
         console.print("Exec: %s, Path: %s\n\n", exe_.c_str(), path_.c_str());
 
-        console.print("Argument list:\n\n");
-        for (const auto & arg : args_) {
-            console.print("%s ", arg.c_str());
+        if (args_.size() > 0) {
+            console.print("Argument list:\n\n");
+            for (const auto & arg : args_) {
+                console.print("%s ", arg.c_str());
+            }
+
+            console.print("\n\n");
         }
 
-        console.print("\n\n");
+        if (dict_.size() > 0) {
+            console.print("Argument dictionary:\n\n");
+            for (const auto & pair : dict_) {
+                console.print("Key: \"%s\", Value: \"%s\"\n", pair.first.c_str(), pair.second.c_str());
+            }
 
-        console.print("Argument dictionary:\n\n");
-        for (const auto & pair : dict_) {
-            console.print("Key: \"%s\", Value: \"%s\"\n", pair.first.c_str(), pair.second.c_str());
+            console.print("\n");
         }
 
-        console.print("\n\n");
+        if (no_keys_.size() > 0) {
+            console.print("No keys argument(s):\n\n");
+            for (auto const & arg : no_keys_) {
+                console.print("- \"%s\"\n", arg.c_str());
+            }
 
-        console.print("No keys argument(s):\n\n");
-        for (auto const & arg : no_keys_) {
-            console.print("- \"%s\"\n", arg.c_str());
+            console.print("\n");
         }
-
-        console.print("\n");
     }
 
     int parse(int argc, char * argv[]) {

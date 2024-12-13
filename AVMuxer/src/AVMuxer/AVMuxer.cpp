@@ -19,22 +19,37 @@ extern "C" {
 #include "AVConsole.h"
 #include "CmdParser.h"
 
-int main(int argc, char * argv[])
+void cmd_parser_test(int argc, char * argv[])
 {
     CmdParser cmd_parser(argc, argv);
     cmd_parser.dump();
 
-    if (cmd_parser.is_contains("v")) {
-        console.print("cmd_parser.find(\"v\") = %s\n", cmd_parser.find("v"));
+    if (cmd_parser.has_key("v")) {
+        console.print("cmd_parser.get_value(\"v\") = %s\n", cmd_parser.get_value("v"));
     }
 
-    if (cmd_parser.is_contains("a")) {
-        console.print("cmd_parser.find(\"a\") = %s\n", cmd_parser.find("a"));
+    if (cmd_parser.has_key("a")) {
+        console.print("cmd_parser.get_value(\"a\") = %s\n", cmd_parser.get_value("a"));
     }
 
-    if (cmd_parser.is_contains("Host")) {
-        console.print("cmd_parser.find(\"Host\") = %s\n", cmd_parser.find("Host"));
+    if (cmd_parser.has_key("Host")) {
+        console.print("cmd_parser.get_value(\"Host\") = %s\n", cmd_parser.get_value("Host"));
     }
+}
 
+int main(int argc, char * argv[])
+{
+#if LIBAVFORMAT_BUILD < AV_VERSION_INT(58, 9, 100)
+    // 该函数从 avformat 库的 58.9.100 版本开始被废弃
+    // (2018-02-06, 大约是 FFmepg 4.0 版本)
+    av_register_all();
+#endif
+
+    cmd_parser_test(argc, argv);
+
+#if defined(_WIN32) || defined(_WIN64)
+    console.println("");
+    ::system("pause");
+#endif
     return 0;
 }

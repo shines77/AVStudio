@@ -18,12 +18,39 @@
     <ClCompile Include="..\..\..\src\AVMuxer\AVMuxer.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\src\AVMuxer\ffMuxer.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\src\AVMuxer\ffHwAccel.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\src\AVMuxer\system_lib.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\src\AVMuxer\AVConsole.h">
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\src\AVMuxer\CmdParser.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\AVMuxer\ffMuxer.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\AVMuxer\ffHwAccel.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\AVMuxer\d3d_helper.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\AVMuxer\string_utils.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\AVMuxer\system_lib.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\AVMuxer\string_utils_cxx11.h">
       <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>
