@@ -157,17 +157,18 @@
     <ClCompile Include="..\..\..\src\AVMuxer\AVMuxer.cpp" />
     <ClCompile Include="..\..\..\src\AVMuxer\ffHwAccel.cpp" />
     <ClCompile Include="..\..\..\src\AVMuxer\ffMuxer.cpp" />
-    <ClCompile Include="..\..\..\src\AVMuxer\system_lib.cpp" />
+    <ClCompile Include="..\..\..\src\AVMuxer\system_dll.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\src\AVMuxer\AVConsole.h" />
     <ClInclude Include="..\..\..\src\AVMuxer\CmdParser.h" />
     <ClInclude Include="..\..\..\src\AVMuxer\d3d_helper.h" />
+    <ClInclude Include="..\..\..\src\AVMuxer\error_code.h" />
     <ClInclude Include="..\..\..\src\AVMuxer\ffHwAccel.h" />
     <ClInclude Include="..\..\..\src\AVMuxer\ffMuxer.h" />
     <ClInclude Include="..\..\..\src\AVMuxer\string_utils.h" />
-    <ClInclude Include="..\..\..\src\AVMuxer\string_utils_cxx11.h" />
-    <ClInclude Include="..\..\..\src\AVMuxer\system_lib.h" />
+    <ClInclude Include="..\..\..\src\AVMuxer\string_utils_cxx.h" />
+    <ClInclude Include="..\..\..\src\AVMuxer\system_dll.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -18,79 +18,56 @@
 
 #include <list>
 
+#include "error_code.h"
 #include "string_utils.h"
+#include "system_dll.h"
 
-HMODULE load_system_library(const std::string & dll_name)
-{
-	std::tstring module_name = string_utils::ansi_to_unicode(dll_name);
-
-#ifdef _UNICODE
-	HMODULE hModule = ::GetModuleHandleW(module_name.c_str());
-	if (!hModule) {
-		hModule = ::LoadLibraryW(module_name.c_str());
-    }
-#else
-	HMODULE hModule = ::GetModuleHandleA(module_name.c_str());
-	if (!hModule) {
-		hModule = ::LoadLibraryA(module_name.c_str());
-    }
-#endif
-    return hModule;
-}
-
-HMODULE load_system_library(const std::string & dll_name_32, const std::string & dll_name_64)
-{
-    static const bool kIs64Bit = (sizeof(void *) == 8);
-
-	std::string module_name = (kIs64Bit) ? dll_name_64 : dll_name_32;
-    return load_system_library(module_name);
-}
+typedef HRESULT(WINAPI * DXGI_FUNC_CREATEFACTORY)(REFIID, IDXGIFactory1 **);
 
 class d3d_helper
 {
-    static int get_adapters(std::list<IDXGIAdapter *> & list, bool free_lib = false) {
-		std::list<IDXGIAdapter *> adapters;
+public:
+    static int get_adapters(std::list<IDXGIAdapter *> & adapters, bool free_lib = true)
+    {
+		int error = E_NO_ERROR;
 
-		int error = S_OK;
-
-		HMODULE hdxgi = load_system_library("dxgi.dll");
-		if (!hdxgi) {
-			error = AE_D3D_LOAD_FAILED;
-			return adapters;
+		HMODULE hDxGi = load_system_library("dxgi.dll");
+		if (!hDxGi) {
+			error = ErrCode(E_D3D_LOAD_FAILED);
+			return error;
 		}
 
 		do {
-			DXGI_FUNC_CREATEFACTORY create_factory = nullptr;
-			create_factory = (DXGI_FUNC_CREATEFACTORY)GetProcAddress(hdxgi, "CreateDXGIFactory1");
+			DXGI_FUNC_CREATEFACTORY create_factory = (DXGI_FUNC_CREATEFACTORY)GetProcAddress(hDxGi, "CreateDXGIFactory1");
 			if (create_factory == nullptr) {
-				error = AE_DXGI_GET_PROC_FAILED;
+				error = ErrCode(E_DXGI_GET_PROC_FAILED);
 				break;
 			}
 
 			IDXGIFactory1 * dxgi_factory = nullptr;
 			HRESULT hr = create_factory(__uuidof(IDXGIFactory1), &dxgi_factory);
 			if (FAILED(hr)) {
-				error = AE_DXGI_GET_FACTORY_FAILED;
+				error = ErrCode(E_DXGI_GET_FACTORY_FAILED);
 				break;
 			}
 
-			unsigned int i = 0;
-			IDXGIAdapter *adapter = nullptr;
+			UINT i = 0;
+			IDXGIAdapter * adapter = nullptr;
 			while (dxgi_factory->EnumAdapters(i, &adapter) != DXGI_ERROR_NOT_FOUND) {
-				if(adapter)
+				if (adapter) {
 					adapters.push_back(adapter);
-				++i;
+                }
+				i++;
 			}
 
 			dxgi_factory->Release();
 		} while (0);
 
-		if (free_lib && hdxgi) {
-            free_system_library(hdxgi);
+		if (free_lib) {
+            free_system_library(hDxGi);
         }
 
-		return adapters;
-        return -1;
+        return error;
     }
 
 private:

@@ -1,11 +1,12 @@
 #pragma once
 
-#include "system_lib.h"
-#include "string_utils.h"
+#include "system_dll.h"
+
+#include "string_utils.h"   // For std::tstring
 
 HMODULE load_system_library(const std::string & dll_name)
 {
-	std::tstring module_name = string_utils::ansi_to_unicode(dll_name);
+	std::tstring module_name = string_utils::ansi_to_unicode_t(dll_name);
 
 #ifdef _UNICODE
 	HMODULE handle = ::GetModuleHandleW(module_name.c_str());

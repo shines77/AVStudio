@@ -24,7 +24,7 @@
     <ClCompile Include="..\..\..\src\AVMuxer\ffHwAccel.cpp">
       <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\src\AVMuxer\system_lib.cpp">
+    <ClCompile Include="..\..\..\src\AVMuxer\system_dll.cpp">
       <Filter>src</Filter>
     </ClCompile>
   </ItemGroup>
@@ -47,10 +47,13 @@
     <ClInclude Include="..\..\..\src\AVMuxer\string_utils.h">
       <Filter>src</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\src\AVMuxer\system_lib.h">
+    <ClInclude Include="..\..\..\src\AVMuxer\string_utils_cxx.h">
       <Filter>src</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\src\AVMuxer\string_utils_cxx11.h">
+    <ClInclude Include="..\..\..\src\AVMuxer\system_dll.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\AVMuxer\error_code.h">
       <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>
