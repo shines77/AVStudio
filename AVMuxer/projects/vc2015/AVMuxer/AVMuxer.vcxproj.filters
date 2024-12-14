@@ -27,6 +27,9 @@
     <ClCompile Include="..\..\..\src\AVMuxer\system_dll.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\src\AVMuxer\utils.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\src\AVMuxer\AVConsole.h">
@@ -54,6 +57,9 @@
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\src\AVMuxer\error_code.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\AVMuxer\utils.h">
       <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>

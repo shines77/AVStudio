@@ -30,9 +30,9 @@ public:
     std::vector<std::string>        video_hardware_devices;
     std::vector<HARDWARE_ENCODER>   video_encoders;
 
-protected:
     void init();
 
+protected:
     std::size_t get_video_hardware_devices();
     std::size_t get_support_video_encoders();
 

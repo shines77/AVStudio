@@ -158,6 +158,7 @@
     <ClCompile Include="..\..\..\src\AVMuxer\ffHwAccel.cpp" />
     <ClCompile Include="..\..\..\src\AVMuxer\ffMuxer.cpp" />
     <ClCompile Include="..\..\..\src\AVMuxer\system_dll.cpp" />
+    <ClCompile Include="..\..\..\src\AVMuxer\utils.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\src\AVMuxer\AVConsole.h" />
@@ -169,6 +170,7 @@
     <ClInclude Include="..\..\..\src\AVMuxer\string_utils.h" />
     <ClInclude Include="..\..\..\src\AVMuxer\string_utils_cxx.h" />
     <ClInclude Include="..\..\..\src\AVMuxer\system_dll.h" />
+    <ClInclude Include="..\..\..\src\AVMuxer\utils.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

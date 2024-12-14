@@ -47,6 +47,17 @@ public:
             return "";
     }
 
+    std::size_t no_key_count() const {
+        return no_keys_.size();
+    }
+
+    std::string no_key_values(int index) {
+        if (index < no_key_count())
+            return no_keys_[index];
+        else
+            return "";
+    }
+
     bool has_key(const std::string & key) const {
         auto iter = dict_.find(key);
         return (iter != dict_.end());
