@@ -27,15 +27,23 @@ typedef HRESULT(WINAPI * DXGI_FUNC_CREATEFACTORY)(REFIID, IDXGIFactory1 **);
 class d3d_helper
 {
 public:
-    static int get_adapters(std::list<IDXGIAdapter *> & adapters, bool free_lib = true)
+    static int get_adapters(std::list<IDXGIAdapter *> & adapters, HMODULE * out_Dxgi, bool free_lib = false)
     {
 		int error = E_NO_ERROR;
+
+        if (out_Dxgi) {
+            *out_Dxgi = NULL;
+        }
 
 		HMODULE hDxGi = load_system_library("dxgi.dll");
 		if (!hDxGi) {
 			error = ErrCode(E_D3D_LOAD_FAILED);
 			return error;
 		}
+
+        if (out_Dxgi) {
+            *out_Dxgi = hDxGi;
+        }
 
 		do {
 			DXGI_FUNC_CREATEFACTORY create_factory = (DXGI_FUNC_CREATEFACTORY)GetProcAddress(hDxGi, "CreateDXGIFactory1");
@@ -64,7 +72,7 @@ public:
 		} while (0);
 
 		if (free_lib) {
-            free_system_library(hDxGi);
+            //free_system_library(hDxGi);
         }
 
         return error;

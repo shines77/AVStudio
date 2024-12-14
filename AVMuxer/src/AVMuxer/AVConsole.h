@@ -9,8 +9,8 @@
 #include <iostream>
 #include <fstream>
 #include <string>
-#include <algorithm>
-#include <cctype>
+
+#include "utils.h"
 
 namespace av {
 
@@ -47,18 +47,6 @@ struct FileState {
         Closed
     };
 };
-
-void str_to_lower(std::string & str)
-{
-    std::transform(str.begin(), str.end(), str.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
-}
-
-void str_to_upper(std::string & str)
-{
-    std::transform(str.begin(), str.end(), str.begin(),
-                   [](unsigned char c) { return std::toupper(c); });
-}
 
 template <typename Writer, typename CharType = char>
 class ConsoleBase

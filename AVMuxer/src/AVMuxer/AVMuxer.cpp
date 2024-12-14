@@ -19,6 +19,8 @@ extern "C" {
 #include "AVConsole.h"
 #include "CmdParser.h"
 
+#include "ffHwAccel.h"
+
 void cmd_parser_test(int argc, char * argv[])
 {
     CmdParser cmd_parser(argc, argv);
@@ -45,7 +47,10 @@ int main(int argc, char * argv[])
     av_register_all();
 #endif
 
-    cmd_parser_test(argc, argv);
+    //cmd_parser_test(argc, argv);
+
+    bool supported_nvenc = is_support_nvenc();
+    console.println("supported_nvenc = %d", (int)supported_nvenc);
 
 #if defined(_WIN32) || defined(_WIN64)
     console.println("");
