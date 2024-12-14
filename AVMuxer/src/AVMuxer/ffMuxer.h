@@ -1,6 +1,7 @@
 
 #pragma once
 
+#include <stdint.h>
 #include <string>
 
 struct AVOutputFormat;
@@ -8,6 +9,7 @@ struct AVFormatContext;
 struct AVCodecContext;
 struct AVFrame;
 struct AVPacket;
+struct AVStream;
 
 enum AVPixelFormat;
 enum AVSampleFormat;
@@ -60,9 +62,13 @@ public:
     int init(const std::string & input_video_file, const std::string & input_audio_file,
              const std::string & output_file, MuxerSettings * output_settings);
 
+    int  start();
     void stop();
     void cleanup();
     void release();
+
+    int create_from_in_stream(AVFormatContext * av_ofmt_ctx, AVStream ** out_stream,
+                              AVStream * in_stream, bool is_video = true);
 
 private:
     AVFormatContext *   v_ifmt_ctx_;
@@ -74,9 +80,19 @@ private:
     AVFormatContext *   v_ofmt_ctx_;
     AVFormatContext *   a_ofmt_ctx_;
 
+    AVStream *          v_in_stream_;
+    AVStream *          a_in_stream_;
+
+    AVStream *          v_out_stream_;
+    AVStream *          a_out_stream_;
+
+    int64_t start_time_;
+
     int in_video_index_;
     int in_audio_index_;
 
     int out_video_index_;
     int out_audio_index_;
+
+    std::string output_file_;
 };

@@ -421,6 +421,9 @@ struct BasicWriter
 
     static const bool kIsStreamWriter = false;
 
+    BasicWriter() { }
+    ~BasicWriter() { }
+
     bool is_stream_writer() const {
         return kIsStreamWriter;
     }
@@ -460,6 +463,9 @@ struct BasicStreamWriter
 
     static const bool kIsStreamWriter = true;
 
+    BasicStreamWriter() { }
+    ~BasicStreamWriter() { }
+
     bool is_stream_writer() const {
         return kIsStreamWriter;
     }
@@ -477,14 +483,6 @@ struct BasicStreamWriter
 
 struct ConsoleWriter : public BasicWriter<char>
 {
-    ConsoleWriter() {
-        //
-    }
-
-    ~ConsoleWriter() {
-        //
-    }
-
     void write(const char * text) {
         ::printf(text);
     }
@@ -500,14 +498,6 @@ struct ConsoleWriter : public BasicWriter<char>
 
 struct StdWriter : public BasicWriter<char>
 {
-    StdWriter() {
-        //
-    }
-
-    ~StdWriter() {
-        //
-    }
-
     void write(const char * text) {
         std::cout << text;
     }
@@ -519,14 +509,6 @@ struct StdWriter : public BasicWriter<char>
 
 struct StdFileWriter : public BasicStreamWriter<char>
 {
-    StdFileWriter() {
-        //
-    }
-
-    ~StdFileWriter() {
-        //
-    }
-
     int open(const string_type & filename, bool onlyAppend = true) {
         int status = FileStatus::Unknown;
         if (!out_file_.is_open()) {

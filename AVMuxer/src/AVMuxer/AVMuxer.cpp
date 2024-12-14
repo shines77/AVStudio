@@ -87,6 +87,7 @@ int main(int argc, char * argv[])
     }
 
     {
+        int ret;
         bool supported_nvenc = is_support_nvenc();
         console.println("supported_nvenc = %d", (int)supported_nvenc);
 
@@ -111,7 +112,10 @@ int main(int argc, char * argv[])
         settings.sample_fmt = AV_SAMPLE_FMT_FLTP;
 
         ffMuxer muxer;
-        muxer.init(video_file, audio_file, output_file, &settings);
+        ret = muxer.init(video_file, audio_file, output_file, &settings);
+        if (ret == 0) {
+            muxer.start();
+        }
     }
 
 pause_and_exit:
