@@ -1359,7 +1359,7 @@ int CCameraCapture::ffmpeg_test()
 
     // 创建输出格式上下文
     fSmartPtr<AVFormatContext, 1> outputFormatCtx = NULL;
-    result = avformat_alloc_output_context2(&outputFormatCtx, NULL, NULL, OUTPUT_FILENAME);
+    result = avformat_alloc_output_context2(&outputFormatCtx, NULL, "mp4", OUTPUT_FILENAME);
     if (result < 0) {
         debug_print("无法创建输出格式context\n");
         return -1;
@@ -1380,8 +1380,8 @@ int CCameraCapture::ffmpeg_test()
     outputVideoCodecCtx->height = videoCodecParams->height;
     outputVideoCodecCtx->time_base = time_base;
     outputVideoCodecCtx->framerate = framerate;
-    outputVideoCodecCtx->gop_size = 30;
-    outputVideoCodecCtx->max_b_frames = 3;
+    outputVideoCodecCtx->gop_size = 30 * 3;
+    outputVideoCodecCtx->max_b_frames = 0;
     outputVideoCodecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
     //outputVideoCodecCtx->pix_fmt = AV_PIX_FMT_NV12;
 

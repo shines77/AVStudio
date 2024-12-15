@@ -37,8 +37,8 @@ ffmpeg -f lavfi -i "sine=frequency=440:duration=10" -c:a aac input_audio.aac
 
 ```bash
 ## Windows
-.\AVMuxer.exe -v video.264 -a audio.acc test bbb --help
+.\AVMuxer.exe -v input_video.h264 -a input_audio.aac -o output_264.mp4
 
 ## Linux
-./AVMuxer.exe -v video.264 -a audio.acc test bbb --help
+./AVMuxer.exe -v input_video.h264 -a input_audio.aac -o output_264.mp4
 ```
