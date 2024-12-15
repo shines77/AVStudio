@@ -165,8 +165,10 @@
     <ClInclude Include="..\..\..\src\AVMuxer\CmdParser.h" />
     <ClInclude Include="..\..\..\src\AVMuxer\d3d_helper.h" />
     <ClInclude Include="..\..\..\src\AVMuxer\error_code.h" />
+    <ClInclude Include="..\..\..\src\AVMuxer\fAllocator.h" />
     <ClInclude Include="..\..\..\src\AVMuxer\ffHwAccel.h" />
     <ClInclude Include="..\..\..\src\AVMuxer\ffMuxer.h" />
+    <ClInclude Include="..\..\..\src\AVMuxer\fSmartPtr.h" />
     <ClInclude Include="..\..\..\src\AVMuxer\string_utils.h" />
     <ClInclude Include="..\..\..\src\AVMuxer\string_utils_cxx.h" />
     <ClInclude Include="..\..\..\src\AVMuxer\system_dll.h" />

@@ -77,9 +77,6 @@ private:
     AVFormatContext *   av_ofmt_ctx_;
     AVOutputFormat *    av_ofmt_;
 
-    AVFormatContext *   v_ofmt_ctx_;
-    AVFormatContext *   a_ofmt_ctx_;
-
     AVStream *          v_in_stream_;
     AVStream *          a_in_stream_;
 

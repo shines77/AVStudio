@@ -62,5 +62,11 @@
     <ClInclude Include="..\..\..\src\AVMuxer\utils.h">
       <Filter>src</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\src\AVMuxer\fAllocator.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\AVMuxer\fSmartPtr.h">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

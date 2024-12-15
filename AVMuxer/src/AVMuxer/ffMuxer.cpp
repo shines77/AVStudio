@@ -31,9 +31,6 @@ ffMuxer::ffMuxer()
     av_ofmt_ctx_ = nullptr;
     av_ofmt_ = nullptr;
 
-    v_ofmt_ctx_ = nullptr;
-    a_ofmt_ctx_ = nullptr;
-
     v_in_stream_ = nullptr;
     a_in_stream_ = nullptr;
 
@@ -58,11 +55,6 @@ void ffMuxer::release()
 {
     stop();
     cleanup();
-}
-
-void ffMuxer::stop()
-{
-    //
 }
 
 void ffMuxer::cleanup()
@@ -204,6 +196,7 @@ int ffMuxer::init(const std::string & input_video_file, const std::string & inpu
                 }
                 if (out_stream != nullptr) {
                     out_stream->r_frame_rate = in_stream->r_frame_rate;
+                    out_stream->avg_frame_rate = in_stream->avg_frame_rate;
                     out_video_index_ = out_stream->index;
 
                     v_in_stream_ = in_stream;
@@ -249,24 +242,140 @@ cleanup_and_exit:
 
 int ffMuxer::start()
 {
-    int ret;
+    int ret = ErrCode(EINVAL);
+    if (!av_ofmt_ctx_) {
+        console.error("Invalid parameter [av_ofmt_ctx_]: %d", ret);
+        return ret;
+    }
     start_time_ = av_gettime_relative();
 
-    do {
-        // 创建输出文件
-        ret = avformat_alloc_output_context2(&av_ofmt_ctx_, NULL, NULL, output_file_.c_str());
+    // 打开输出文件
+    if (!(av_ofmt_ctx_->oformat->flags & AVFMT_NOFILE)) {
+        ret = avio_open(&av_ofmt_ctx_->pb, output_file_.c_str(), AVIO_FLAG_WRITE);
         if (ret < 0) {
-            console.error("Could not create output context: %d", ret);
-            break;
+            console.error("Could not open output file: %d", ret);
+            return ret;
         }
+    }
 
-        // 写入文件头
-        ret = avformat_write_header(av_ofmt_ctx_, NULL);
-        if (ret < 0) {
-            console.error("Error occurred when writing header to output file: %d", ret);
-            break;
+    // 写入文件头
+    ret = avformat_write_header(av_ofmt_ctx_, NULL);
+    if (ret < 0) {
+        console.error("Error occurred when writing header to output file: %d", ret);
+        return ret;
+    }
+
+    int64_t v_cur_pts = 0, a_cur_pts = 0;
+    size_t v_frame_index = 0, a_frame_index = 0;
+    bool is_video_EOF = false, is_audio_EOF = false;
+
+    // Duration between 2 frames (us)
+    double v_duration = ((double)AV_TIME_BASE / av_q2d(v_out_stream_->r_frame_rate));
+    double v_time_base = (av_q2d(v_out_stream_->time_base) * AV_TIME_BASE);
+    int64_t v_duration_64 = (int64_t)(v_duration / v_time_base);
+
+    // Duration between 2 frames (us)
+    AVRational r_sample_rate = { a_out_stream_->codecpar->sample_rate, 1 };
+    double a_duration = ((double)AV_TIME_BASE / av_q2d(r_sample_rate));
+    double a_time_base = (av_q2d(a_out_stream_->time_base) * AV_TIME_BASE);
+    int64_t a_duration_64 = (int64_t)(a_duration / a_time_base);
+
+    while (!is_video_EOF || !is_audio_EOF) {
+        int video_or_audio = av_compare_ts(v_cur_pts, v_out_stream_->time_base,
+                                           a_cur_pts, a_out_stream_->time_base);
+        if ((video_or_audio <= 0 || is_audio_EOF) && !is_video_EOF) {
+            // Read video frames
+            do {
+                AVPacket packet;
+                ret = av_read_frame(v_ifmt_ctx_, &packet);
+                if (ret == 0) {
+                    if (packet.pts == AV_NOPTS_VALUE) {
+                        // Write PTS
+                        packet.pts = (int64_t)((v_duration * v_frame_index) / v_time_base);
+                        packet.dts = packet.pts;
+                        packet.duration = v_duration_64;
+                    }
+                    else {
+                        av_packet_rescale_ts(&packet, v_in_stream_->time_base, v_out_stream_->time_base);
+                    }
+                    v_cur_pts = packet.pts + packet.duration;
+                    v_frame_index++;
+                    packet.stream_index = v_out_stream_->index;
+                    ret = av_interleaved_write_frame(av_ofmt_ctx_, &packet);
+                    if (ret < 0) {
+                        av_packet_unref(&packet);
+                        console.error("Error occurred when writing video packet to output file: %d", ret);
+                        break;
+                    }
+                }
+                else if (ret == AVERROR(EAGAIN)) {
+                    console.error("Error occurred when reading video packet: [EAGAIN] %d", ret);
+                    break;
+                }
+                else if (ret == AVERROR_EOF) {
+                    is_video_EOF = true;
+                    console.error("Error occurred when reading video packet to end: [EOF] %d", ret);
+                    break;
+                }
+                else if (ret < 0) {
+                    console.error("Error occurred when reading video packet: %d\n", ret);
+                    break;
+                }
+            } while (0);
         }
-    } while (0);
+        else if ((video_or_audio > 0 || is_video_EOF) && !is_audio_EOF) {
+            // Read audio frames
+            do {
+                AVPacket packet;
+                ret = av_read_frame(a_ifmt_ctx_, &packet);
+                if (ret == 0) {
+                    if (packet.pts == AV_NOPTS_VALUE) {
+                        // Write PTS
+                        packet.pts = (int64_t)((a_duration * a_frame_index) / a_time_base);
+                        packet.dts = packet.pts;
+                        packet.duration = a_duration_64;
+                    }
+                    else {
+                        av_packet_rescale_ts(&packet, a_in_stream_->time_base, a_out_stream_->time_base);
+                    }
+                    a_cur_pts = packet.pts + packet.duration;
+                    a_frame_index++;
+                    packet.stream_index = a_out_stream_->index;
+                    ret = av_interleaved_write_frame(av_ofmt_ctx_, &packet);
+                    if (ret < 0) {
+                        av_packet_unref(&packet);
+                        console.error("Error occurred when writing audio packet to output file: %d", ret);
+                        break;
+                    }
+                }
+                else if (ret == AVERROR(EAGAIN)) {
+                    console.error("Error occurred when reading audio packet: [EAGAIN] %d", ret);
+                    break;
+                }
+                else if (ret == AVERROR_EOF) {
+                    is_audio_EOF = true;
+                    console.error("Error occurred when reading audio packet to end: [EOF] %d", ret);
+                    break;
+                }
+                else if (ret < 0) {
+                    console.error("Error occurred when reading audio packet: %d\n", ret);
+                    break;
+                }
+            } while (0);
+        }
+    }
+
+    // 写入文件尾
+    ret = av_write_trailer(av_ofmt_ctx_);
+    if (ret < 0) {
+        console.error("Error occurred when writing trailer to output file: %d", ret);
+        return ret;
+    }
 
     return ret;
+}
+
+void ffMuxer::stop()
+{
+    //
 }
