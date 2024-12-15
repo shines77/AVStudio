@@ -270,19 +270,19 @@ int ffMuxer::start()
     bool is_video_EOF = false, is_audio_EOF = false;
 
     // Duration between 2 frames (us)
-    double v_duration = ((double)AV_TIME_BASE / av_q2d(v_out_stream_->r_frame_rate));
-    double v_time_base = (av_q2d(v_out_stream_->time_base) * AV_TIME_BASE);
+    double v_duration = ((double)AV_TIME_BASE / av_q2d(v_in_stream_->r_frame_rate));
+    double v_time_base = (av_q2d(v_in_stream_->time_base) * AV_TIME_BASE);
     int64_t v_duration_64 = (int64_t)(v_duration / v_time_base);
 
     // Duration between 2 frames (us)
-    AVRational r_sample_rate = { a_out_stream_->codecpar->sample_rate, 1 };
+    AVRational r_sample_rate = { a_in_stream_->codecpar->sample_rate, 1 };
     double a_duration = ((double)AV_TIME_BASE / av_q2d(r_sample_rate));
-    double a_time_base = (av_q2d(a_out_stream_->time_base) * AV_TIME_BASE);
+    double a_time_base = (av_q2d(a_in_stream_->time_base) * AV_TIME_BASE);
     int64_t a_duration_64 = (int64_t)(a_duration / a_time_base);
 
     while (!is_video_EOF || !is_audio_EOF) {
-        int video_or_audio = av_compare_ts(v_cur_pts, v_out_stream_->time_base,
-                                           a_cur_pts, a_out_stream_->time_base);
+        int video_or_audio = av_compare_ts(v_cur_pts, v_in_stream_->time_base,
+                                           a_cur_pts, a_in_stream_->time_base);
         if ((video_or_audio <= 0 || is_audio_EOF) && !is_video_EOF) {
             // Read video frames
             do {
@@ -295,12 +295,10 @@ int ffMuxer::start()
                         packet.dts = packet.pts;
                         packet.duration = v_duration_64;
                     }
-                    else {
-                        av_packet_rescale_ts(&packet, v_in_stream_->time_base, v_out_stream_->time_base);
-                    }
                     v_cur_pts = packet.pts + packet.duration;
-                    v_frame_index++;
                     packet.stream_index = v_out_stream_->index;
+                    av_packet_rescale_ts(&packet, v_in_stream_->time_base, v_out_stream_->time_base);
+                    v_frame_index++;
                     ret = av_interleaved_write_frame(av_ofmt_ctx_, &packet);
                     if (ret < 0) {
                         av_packet_unref(&packet);
@@ -335,12 +333,10 @@ int ffMuxer::start()
                         packet.dts = packet.pts;
                         packet.duration = a_duration_64;
                     }
-                    else {
-                        av_packet_rescale_ts(&packet, a_in_stream_->time_base, a_out_stream_->time_base);
-                    }
                     a_cur_pts = packet.pts + packet.duration;
-                    a_frame_index++;
                     packet.stream_index = a_out_stream_->index;
+                    av_packet_rescale_ts(&packet, a_in_stream_->time_base, a_out_stream_->time_base);
+                    a_frame_index++;
                     ret = av_interleaved_write_frame(av_ofmt_ctx_, &packet);
                     if (ret < 0) {
                         av_packet_unref(&packet);
