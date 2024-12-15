@@ -16,6 +16,7 @@ extern "C" {
 #include <libavutil/log.h>
 }
 
+#include "global.h"
 #include "error_code.h"
 #include "CmdParser.h"
 #include "AVConsole.h"
@@ -40,14 +41,30 @@ void cmd_parser_test(int argc, char * argv[])
     }
 }
 
+void print_usage()
+{
+    printf("Usage:\n\n");
+    printf("    AVMuxer.exe -v input_video_file -a input_audio_file [-o output_file]\n\n");
+    printf("    -v: the input video filename\n");
+    printf("    -a: the input audio filename\n");
+    printf("    -o: the output media filename\n");
+    printf("\n");
+    printf("    If have no -o option, default output filename is \"output_264.mp4\"\n");
+    printf("\n");
+    printf("Example:\n\n");
+    printf("    AVMuxer.exe -v input_video.h264 -a input_audio.aac\n");
+    printf("    AVMuxer.exe -v input_video.h264 -a input_audio.aac -o output_264.mp4\n");
+    printf("\n");
+}
+
 int main(int argc, char * argv[])
 {
-#if 1 || (LIBAVFORMAT_BUILD < AV_VERSION_INT(58, 9, 100))
+#if (LIBAVFORMAT_BUILD < AV_VERSION_INT(58, 9, 100))
     // 该函数从 avformat 库的 58.9.100 版本开始被废弃
     // (2018-02-06, 大约是 FFmepg 4.0 版本)
     av_register_all();
 #endif
-    console.set_log_level(av::LogLevel::Error);
+    console.set_log_level(av::LogLevel::Fatal);
 
     std::string video_file, audio_file;
     std::string output_file = "output_264.mp4";
@@ -81,19 +98,24 @@ int main(int argc, char * argv[])
             }
         }
     }
+    else {
+        // Error
+        args_err = E_ERROR;
+    }
     if (args_err != E_NO_ERROR) {
-        console.error("Command line input parameter error!");
+        print_usage();
         goto pause_and_exit;
     }
 
     {
         int ret;
+#if 0
         bool supported_nvenc = is_support_nvenc();
         console.println("supported_nvenc = %d", (int)supported_nvenc);
 
         ffHwAccel hwAccel;
         hwAccel.init();
-
+#endif
         MuxerSettings settings;
         settings.codec_id_v = AV_CODEC_ID_H264;
         settings.bit_rate_v = 200000;
@@ -120,8 +142,8 @@ int main(int argc, char * argv[])
 
 pause_and_exit:
 #if defined(_WIN32) || defined(_WIN64)
-    console.println("");
-    ::system("pause");
+    //console.println("");
+    //::system("pause");
 #endif
     return 0;
 }

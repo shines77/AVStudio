@@ -30,6 +30,9 @@
     <ClCompile Include="..\..\..\src\AVMuxer\utils.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\src\AVMuxer\global.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\src\AVMuxer\AVConsole.h">
@@ -66,6 +69,9 @@
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\src\AVMuxer\fSmartPtr.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\AVMuxer\global.h">
       <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>

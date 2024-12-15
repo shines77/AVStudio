@@ -9,6 +9,8 @@
 
 #include <assert.h>
 
+#include "global.h"
+
 class CmdParser
 {
 public:

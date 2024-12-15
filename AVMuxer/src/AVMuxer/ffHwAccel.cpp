@@ -11,11 +11,11 @@ extern "C" {
 #include <ctype.h>      // For ::toupper()
 #include <algorithm>    // For std::transform()
 
+#include "global.h"
 #include "error_code.h"
 #include "string_utils.h"
 #include "system_dll.h"
 #include "d3d_helper.h"
-#include "AVConsole.h"
 
 // 940M is support NVENC
 static const std::list<std::string> nvenc_blacklist = {

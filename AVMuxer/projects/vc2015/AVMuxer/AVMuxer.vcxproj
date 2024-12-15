@@ -157,6 +157,7 @@
     <ClCompile Include="..\..\..\src\AVMuxer\AVMuxer.cpp" />
     <ClCompile Include="..\..\..\src\AVMuxer\ffHwAccel.cpp" />
     <ClCompile Include="..\..\..\src\AVMuxer\ffMuxer.cpp" />
+    <ClCompile Include="..\..\..\src\AVMuxer\global.cpp" />
     <ClCompile Include="..\..\..\src\AVMuxer\system_dll.cpp" />
     <ClCompile Include="..\..\..\src\AVMuxer\utils.cpp" />
   </ItemGroup>
@@ -169,6 +170,7 @@
     <ClInclude Include="..\..\..\src\AVMuxer\ffHwAccel.h" />
     <ClInclude Include="..\..\..\src\AVMuxer\ffMuxer.h" />
     <ClInclude Include="..\..\..\src\AVMuxer\fSmartPtr.h" />
+    <ClInclude Include="..\..\..\src\AVMuxer\global.h" />
     <ClInclude Include="..\..\..\src\AVMuxer\string_utils.h" />
     <ClInclude Include="..\..\..\src\AVMuxer\string_utils_cxx.h" />
     <ClInclude Include="..\..\..\src\AVMuxer\system_dll.h" />

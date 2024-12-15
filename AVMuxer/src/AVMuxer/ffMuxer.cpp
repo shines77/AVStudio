@@ -16,7 +16,7 @@ extern "C" {
 #include <stdint.h>
 #include <string>
 
-#include "AVConsole.h"
+#include "global.h"
 #include "error_code.h"
 #include "fAllocator.h"
 
@@ -312,7 +312,7 @@ int ffMuxer::start()
                 }
                 else if (ret == AVERROR_EOF) {
                     is_video_EOF = true;
-                    console.error("Error occurred when reading video packet to end: [EOF] %d", ret);
+                    console.info("Info occurred when reading video packet to end: [EOF] %d", ret);
                     break;
                 }
                 else if (ret < 0) {
@@ -350,7 +350,7 @@ int ffMuxer::start()
                 }
                 else if (ret == AVERROR_EOF) {
                     is_audio_EOF = true;
-                    console.error("Error occurred when reading audio packet to end: [EOF] %d", ret);
+                    console.info("Info occurred when reading audio packet to end: [EOF] %d", ret);
                     break;
                 }
                 else if (ret < 0) {
