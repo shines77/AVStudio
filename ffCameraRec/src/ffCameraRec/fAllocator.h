@@ -44,6 +44,12 @@ struct fAllocator<AVFormatContext, SMT_Output>
 {
     inline void _free(AVFormatContext * ptr) {
         if (ptr) {
+            if (ptr->pb) {
+                if (!(ptr->oformat->flags & AVFMT_NOFILE)) {
+                    avio_closep(&ptr->pb);
+                    ptr->pb = nullptr;
+                }
+            }
             avformat_free_context(ptr);
         }
     }

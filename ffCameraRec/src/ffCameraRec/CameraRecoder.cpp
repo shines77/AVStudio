@@ -12,15 +12,53 @@ extern "C" {
 #include <libavutil/log.h>
 }
 
+#include <assert.h>
+
 #include "global.h"
 #include "string_utils.h"
 #include "fSmartPtr.h"
 #include "DShowDevice.h"
 
+//
+// About libavdivice: https://blog.csdn.net/leixiaohua1020/article/details/39702113
+//
 CameraRecoder::CameraRecoder()
 {
+    inited_ = false;
+
+    // Input
     v_input_fmt_ = nullptr;
     a_input_fmt_ = nullptr;
+
+    v_ifmt_ctx_ = nullptr;
+    a_ifmt_ctx_ = nullptr;
+
+    v_in_stream_ = nullptr;
+    a_in_stream_ = nullptr;
+
+    v_input_codec_ = nullptr;
+    a_input_codec_ = nullptr;
+
+    v_icodec_ctx_ = nullptr;
+    a_icodec_ctx_ = nullptr;
+
+    // Output
+    v_ofmt_ctx_ = nullptr;
+    a_ofmt_ctx_ = nullptr;
+
+    v_out_stream_ = nullptr;
+    a_out_stream_ = nullptr;
+
+    v_output_codec_ = nullptr;
+    a_output_codec_ = nullptr;
+
+    v_ocodec_ctx_ = nullptr;
+    a_ocodec_ctx_ = nullptr;
+
+    av_ofmt_ctx_ = nullptr;
+
+    v_stream_index_ = -1;
+    a_stream_index_ = -1;
 }
 
 CameraRecoder::~CameraRecoder()
@@ -36,28 +74,110 @@ void CameraRecoder::release()
 
 void CameraRecoder::cleanup()
 {
-    if (v_input_fmt_) {
-        v_input_fmt_ = nullptr;
+    if (a_ocodec_ctx_) {
+        avcodec_free_context(&a_ocodec_ctx_);
+        a_ocodec_ctx_ = nullptr;
     }
+
+    if (v_ocodec_ctx_) {
+        avcodec_free_context(&v_ocodec_ctx_);
+        v_ocodec_ctx_ = nullptr;
+    }
+
+    if (a_icodec_ctx_) {
+        avcodec_free_context(&a_icodec_ctx_);
+        a_icodec_ctx_ = nullptr;
+    }
+
+    if (v_icodec_ctx_) {
+        avcodec_free_context(&v_icodec_ctx_);
+        v_icodec_ctx_ = nullptr;
+    }
+
+    if (a_ifmt_ctx_) {
+        avformat_close_input(&a_ifmt_ctx_);
+        a_ifmt_ctx_ = nullptr;
+    }
+
+    if (v_ifmt_ctx_) {
+        avformat_close_input(&v_ifmt_ctx_);
+        v_ifmt_ctx_ = nullptr;
+    }
+
+    if (av_ofmt_ctx_) {
+        if (av_ofmt_ctx_->pb) {
+            if (!(av_ofmt_ctx_->oformat->flags & AVFMT_NOFILE)) {
+                avio_closep(&av_ofmt_ctx_->pb);
+                av_ofmt_ctx_->pb = nullptr;
+            }
+        }
+        avformat_free_context(av_ofmt_ctx_);
+        av_ofmt_ctx_ = nullptr;
+    }
+
+    v_stream_index_ = -1;
+    a_stream_index_ = -1;
+
+    // Input
+    v_ifmt_ctx_ = nullptr;
+    a_ifmt_ctx_ = nullptr;
+
+    v_input_codec_ = nullptr;
+    a_input_codec_ = nullptr;
+
+    v_in_stream_ = nullptr;
+    a_in_stream_ = nullptr;
+
+    v_icodec_ctx_ = nullptr;
+    a_icodec_ctx_ = nullptr;
+
+    // Output
+    v_ofmt_ctx_ = nullptr;
+    a_ofmt_ctx_ = nullptr;
+
+    v_output_codec_ = nullptr;
+    a_output_codec_ = nullptr;
+
+    v_out_stream_ = nullptr;
+    a_out_stream_ = nullptr;
+
+    v_ocodec_ctx_ = nullptr;
+    a_ocodec_ctx_ = nullptr;
+
+    // Input video & audio
+    v_input_fmt_ = nullptr;
+    a_input_fmt_ = nullptr;
+
+    inited_ = false;
+}
+
+const char * get_display_ptr(uint8_t * ptr)
+{
+    return ((ptr != nullptr) ? (const char *)(ptr) : "nullptr");
 }
 
 int CameraRecoder::init(const std::string & output_file)
 {
-    int ret;
+    int ret = AVERROR_UNKNOWN;
+    if (inited_) {
+        return AVERROR(EEXIST);
+    }
+    
+    release();
+    output_file_ = output_file;
 
     // 设置设备枚举选项
-    fSmartPtr<AVDictionary> options = nullptr;
-    ret = av_dict_set(&options, "list_devices", "true", 0);
+    fSmartPtr<AVDictionary> device_options = nullptr;
+    ret = av_dict_set(&device_options, "list_devices", "true", 0);
 
-    // 打开视频设备
-    AVInputFormat * v_input_fmt = av_find_input_format("dshow");
-    if (v_input_fmt == NULL) {
+    // 创建 dshow 视频 input format
+    assert(v_input_fmt_ == nullptr);
+    v_input_fmt_ = av_find_input_format("dshow");
+    if (v_input_fmt_ == nullptr) {
         console.error("Could not find input video format");
-        return -1;
+        return AVERROR(ENOSYS);
     }
-    v_input_fmt_ = v_input_fmt;
 
-    std::string videoDeviceName, audioDeviceName;
     char video_url[256];
     char audio_url[256];
 
@@ -67,80 +187,756 @@ int CameraRecoder::init(const std::string & output_file)
         dshowDevice.init();
 
         if (dshowDevice.videoDeviceList_.size() > 0)
-            videoDeviceName = string_utils::ansi_to_utf8(dshowDevice.videoDeviceList_[0]);
+            videoDeviceName_ = string_utils::ansi_to_utf8(dshowDevice.videoDeviceList_[0]);
+        else
+            videoDeviceName_ = "";
 
         if (dshowDevice.audioDeviceList_.size() > 0)
-            audioDeviceName = string_utils::ansi_to_utf8(dshowDevice.audioDeviceList_[0]);
+            audioDeviceName_ = string_utils::ansi_to_utf8(dshowDevice.audioDeviceList_[0]);
+        else
+            audioDeviceName_ = "";
     }
 
     // 选择视频设备
-    if (!videoDeviceName.empty())
-        snprintf(video_url, sizeof(video_url), "video=%s", videoDeviceName.c_str());
+    if (!videoDeviceName_.empty())
+        snprintf(video_url, sizeof(video_url), "video=%s", videoDeviceName_.c_str());
     else
         snprintf(video_url, sizeof(video_url), "video=dummy");
 
     // 选择音频设备
-    if (!audioDeviceName.empty())
-        snprintf(audio_url, sizeof(audio_url), "audio=%s", audioDeviceName.c_str());
+    if (!audioDeviceName_.empty())
+        snprintf(audio_url, sizeof(audio_url), "audio=%s", audioDeviceName_.c_str());
     else
         snprintf(audio_url, sizeof(audio_url), "audio=dummy");
 
-    AVFormatContext * v_ifmt_ctx = nullptr;
-
 #if 0
     // 打开一个虚拟的输入流以枚举设备 (从 FFmpeg 4.2.10 已失效, 仅用于查询设备列表, 不能返回)
-    ret = avformat_open_input(&v_ifmt_ctx, "video=dummy", v_input_fmt, &options);
+    assert(v_ifmt_ctx_ == nullptr);
+    ret = avformat_open_input(&v_ifmt_ctx_, "video=dummy", v_input_fmt_, &options);
     if (ret < 0) {
         char error_buf[AV_ERROR_MAX_STRING_SIZE];
         av_strerror(ret, error_buf, sizeof(error_buf));
+        // ret = AVERROR_EXIT, Error = "dummy: Immediate exit requested"
+        // See FFmpeg 4.2.10, /libavdivce/dshow.c, line 1131 ~ 1138
         console.error("Could not open input video device: %s", error_buf);
         return ret;
     }
 #endif
 
-    ret = avformat_open_input(&v_ifmt_ctx, video_url, v_input_fmt, NULL);
+    // 打开视频设备
+    assert(v_ifmt_ctx_ == nullptr);
+    ret = avformat_open_input(&v_ifmt_ctx_, video_url, v_input_fmt_, NULL);
     if (ret < 0) {
         console.error("Could not open input video device: %d", ret);
         return ret;
     }
-    console.info("Selected video device: %s", videoDeviceName.c_str());
+    console.info("Selected video device: %s", videoDeviceName_.c_str());
 
-    if (v_ifmt_ctx) {
-        std::cout << "========Device Info=============" << std::endl;
-        if (v_ifmt_ctx->nb_streams > 0) {
-            for (unsigned int i = 0; i < v_ifmt_ctx->nb_streams; ++i) {
-                AVStream * stream = v_ifmt_ctx->streams[i];
+    // 查找视频流
+    int v_stream_index = -1;
+    for (unsigned int i = 0; i < v_ifmt_ctx_->nb_streams; i++) {
+        if (v_ifmt_ctx_->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+            v_stream_index = i;
+            break;
+        }
+    }
+    if (v_stream_index == -1) {
+        console.error("Could not find the input video stream");
+        return AVERROR(ENOSYS);
+    }
+    v_stream_index_ = v_stream_index;
+
+    // 获取输入视频的视频流 stream
+    v_in_stream_ = v_ifmt_ctx_->streams[v_stream_index_];
+    assert(v_in_stream_ != nullptr);
+
+#if 0
+    if (v_ifmt_ctx_) {
+        std::cout << "========== Device Info ===========" << std::endl;
+        if (v_ifmt_ctx_->nb_streams > 0) {
+            for (unsigned int i = 0; i < v_ifmt_ctx_->nb_streams; ++i) {
+                AVStream * stream = v_ifmt_ctx_->streams[i];
                 if (stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-                    std::cout << "Video Device: " << stream->codecpar->codec_tag << " " << stream->codecpar->extradata << std::endl;
+                    std::cout << "Video Device: " << stream->codecpar->codec_tag << " "
+                              << get_display_ptr(stream->codecpar->extradata) << std::endl;
                 } else if (stream->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
-                    std::cout << "Audio Device: " << stream->codecpar->codec_tag << " " << stream->codecpar->extradata << std::endl;
+                    std::cout << "Audio Device: " << stream->codecpar->codec_tag << " "
+                              << get_display_ptr(stream->codecpar->extradata) << std::endl;
                 }
             }
         }
-        std::cout << "=================================" << std::endl;
+        std::cout << "==================================" << std::endl;
     }
+#endif
 
 #if 0
     // 列出视频设备 (方法已失效)
     AVDeviceInfoList * videoDeviceList = NULL;
-    ret = avdevice_list_input_sources(v_input_fmt, NULL, options, &videoDeviceList);
+    ret = avdevice_list_input_sources(v_input_fmt_, NULL, NULL, &videoDeviceList);
     if (ret < 0) {
         console.error("Could not list video devices: %d", ret);
         return ret;
     }
 #endif
 
-    // 列出音频设备
-    AVInputFormat * a_input_fmt = av_find_input_format("dshow");
-    if (a_input_fmt == NULL) {
+    // 创建 dshow 音频 input format
+    assert(a_input_fmt_ == nullptr);
+    a_input_fmt_ = av_find_input_format("dshow");
+    if (a_input_fmt_ == nullptr) {
         console.error("Could not find input audio format\n");
+        return AVERROR(ENOSYS);
+    }
+
+    // 打开音频设备
+    assert(a_ifmt_ctx_ == nullptr);
+    ret = avformat_open_input(&a_ifmt_ctx_, audio_url, a_input_fmt_, NULL);
+    if (ret < 0) {
+        console.error("Could not open input audio device: %d", ret);
+        return ret;
+    }
+    console.info("Selected audio device: %s", audioDeviceName_.c_str());
+
+    // 查找音频流
+    int a_stream_index = -1;
+    for (unsigned int i = 0; i < a_ifmt_ctx_->nb_streams; i++) {
+        if (a_ifmt_ctx_->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+            a_stream_index = i;
+            break;
+        }
+    }
+    if (a_stream_index == -1) {
+        console.error("Could not find the input audio stream");
+        return AVERROR(ENOSYS);
+    }
+    a_stream_index_ = a_stream_index;
+
+    // 获取输入音频的音频流 stream
+    assert(a_in_stream_ == nullptr);
+    a_in_stream_ = a_ifmt_ctx_->streams[a_stream_index_];
+    assert(a_in_stream_ != nullptr);
+
+    // 查找输入视频的解码器 codec
+    assert(v_input_codec_ == nullptr);
+    v_input_codec_ = avcodec_find_decoder(v_in_stream_->codecpar->codec_id);
+    if (v_input_codec_ == nullptr) {
+        console.error("Failed to find the input video decoder codec");
+        return AVERROR(ENOSYS);
+    }
+
+    // 创建输入视频的解码器 context
+    assert(v_icodec_ctx_ == nullptr);
+    v_icodec_ctx_ = avcodec_alloc_context3(v_input_codec_);
+    assert(v_icodec_ctx_ != nullptr);
+
+    // AV_CODEC_ID_RAWVIDEO (13): "RawVideo"
+    v_icodec_ctx_->codec_id = v_in_stream_->codecpar->codec_id;
+    v_icodec_ctx_->bit_rate = 2000000;
+    v_icodec_ctx_->codec_type = AVMEDIA_TYPE_VIDEO;
+    v_icodec_ctx_->width = v_in_stream_->codecpar->width;
+    v_icodec_ctx_->height = v_in_stream_->codecpar->height;
+    v_icodec_ctx_->framerate = v_in_stream_->r_frame_rate;
+    //v_icodec_ctx_->time_base = av_inv_q(v_in_stream_->r_frame_rate);
+    v_icodec_ctx_->time_base = v_in_stream_->time_base;
+    v_icodec_ctx_->gop_size = 12;
+    v_icodec_ctx_->max_b_frames = 0;
+    // AV_PIX_FMT_YUYV422 (1)
+    v_icodec_ctx_->pix_fmt = (AVPixelFormat)v_in_stream_->codecpar->format;
+
+    //v_in_stream_->time_base = v_icodec_ctx_->time_base;
+
+    // 打开输入视频的解码器 context
+    ret = avcodec_open2(v_icodec_ctx_, v_input_codec_, NULL);
+    if (ret < 0) {
+        console.error("Failed to open input video decoder context: %d", ret);
+        return ret;
+    }
+
+    // 查找输入音频的解码器 codec
+    assert(a_input_codec_ == nullptr);
+    a_input_codec_ = avcodec_find_decoder(a_in_stream_->codecpar->codec_id);
+    if (a_input_codec_ == nullptr) {
+        console.error("Failed to find the input audio decoder codec");
+        return AVERROR(ENOSYS);
+    }
+
+    // 创建输入音频的解码器 context
+    assert(a_icodec_ctx_ == nullptr);
+    a_icodec_ctx_ = avcodec_alloc_context3(a_input_codec_);
+    assert(a_icodec_ctx_ != nullptr);
+
+    AVRational audio_time_base = { 1, a_in_stream_->codecpar->sample_rate };
+
+    // AV_CODEC_ID_PCM_S16LE (65536)
+    a_icodec_ctx_->codec_id = a_in_stream_->codecpar->codec_id;
+    a_icodec_ctx_->codec_type = AVMEDIA_TYPE_AUDIO;
+    a_icodec_ctx_->channels = a_in_stream_->codecpar->channels;
+    a_icodec_ctx_->sample_rate = a_in_stream_->codecpar->sample_rate;
+    // 麦克风默认是单声道的, 实际值是：AV_CH_LAYOUT_STEREO
+    a_icodec_ctx_->channel_layout = av_get_default_channel_layout(a_icodec_ctx_->channels);
+    //a_icodec_ctx_->time_base = audio_time_base;
+    a_icodec_ctx_->time_base = a_in_stream_->time_base;
+    // AV_SAMPLE_FMT_S16 (1)
+    a_icodec_ctx_->sample_fmt = (AVSampleFormat)a_in_stream_->codecpar->format;
+
+    //a_in_stream_->time_base = a_icodec_ctx_->time_base;
+
+    // 打开输入音频的解码器 context
+    ret = avcodec_open2(a_icodec_ctx_, a_input_codec_, NULL);
+    if (ret < 0) {
+        console.error("Failed to open input audio decoder context: %d", ret);
+        return ret;
+    }
+
+    inited_ = true;
+    return ret;
+}
+
+int CameraRecoder::create_encoders()
+{
+    int ret = AVERROR_UNKNOWN;
+    if (!inited_) {
+        return AVERROR(EINVAL);
+    }
+
+    // 创建输出格式上下文
+    assert(av_ofmt_ctx_ == nullptr);
+    ret = avformat_alloc_output_context2(&av_ofmt_ctx_, NULL, "mp4", output_file_.c_str());
+    if (ret < 0) {
+        console.error("Failed to alloc output format context: %d", ret);
+        return ret;
+    }
+
+    // 查找输出视频的编解码器 codec
+    assert(v_output_codec_ == nullptr);
+    v_output_codec_ = avcodec_find_encoder(AV_CODEC_ID_H264);
+    if (v_output_codec_ == nullptr) {
+        console.error("Failed to open output video encoder codec");
+        return AVERROR(ENOSYS);
+    }
+
+    v_ocodec_ctx_ = avcodec_alloc_context3(v_output_codec_);
+
+    v_ocodec_ctx_->bit_rate = 2000000;
+    assert(v_ocodec_ctx_->codec_id == AV_CODEC_ID_H264);
+    v_ocodec_ctx_->codec_type = AVMEDIA_TYPE_VIDEO;
+    v_ocodec_ctx_->width = v_in_stream_->codecpar->width;
+    v_ocodec_ctx_->height = v_in_stream_->codecpar->height;
+    v_ocodec_ctx_->framerate = v_in_stream_->r_frame_rate;
+    //v_ocodec_ctx_->time_base = av_inv_q(v_in_stream_->r_frame_rate);
+    v_ocodec_ctx_->time_base = v_in_stream_->time_base;
+    v_ocodec_ctx_->gop_size = 30 * 3;
+    v_ocodec_ctx_->max_b_frames = 0;
+    v_ocodec_ctx_->pix_fmt = AV_PIX_FMT_YUV420P;
+    //v_ocodec_ctx_->pix_fmt = AV_PIX_FMT_NV12;
+
+    if (av_ofmt_ctx_->oformat->flags & AVFMT_GLOBALHEADER) {
+        v_ocodec_ctx_->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+    }
+
+    //
+    // See: https://blog.csdn.net/weixin_50873490/article/details/141899535
+    //
+    if (v_ocodec_ctx_->codec_id == AV_CODEC_ID_H264) {
+        ret = av_opt_set(v_ocodec_ctx_->priv_data, "profile", "main", 0);
+        // 0 latency
+        ret = av_opt_set(v_ocodec_ctx_->priv_data, "tune", "zerolatency", 0);
+    }
+
+    // 打开输出视频编码器 context
+    ret = avcodec_open2(v_ocodec_ctx_, v_output_codec_, NULL);
+    if (ret < 0) {
+        console.error("Failed to open output video encoder context: %d", ret);
+        return ret;
+    }
+
+    // 查找音频的编解码器 codec
+    assert(a_output_codec_ == nullptr);
+    a_output_codec_ = avcodec_find_encoder(AV_CODEC_ID_AAC);
+    if (a_output_codec_ == NULL) {
+        console.error("Failed to open output audio encoder codec");
+        return AVERROR(ENOSYS);
+    }
+
+    a_ocodec_ctx_ = avcodec_alloc_context3(a_output_codec_);
+
+    AVRational audio_time_base;
+    audio_time_base.num = 1;
+    audio_time_base.den = 48000;
+
+    a_ocodec_ctx_->bit_rate = 160000;
+    a_ocodec_ctx_->codec_id = AV_CODEC_ID_AAC;
+    a_ocodec_ctx_->codec_type = AVMEDIA_TYPE_AUDIO;
+    a_ocodec_ctx_->channels = 2;
+    a_ocodec_ctx_->sample_rate = 48000;
+    a_ocodec_ctx_->channel_layout = av_get_default_channel_layout(a_ocodec_ctx_->channels);
+    //a_ocodec_ctx_->time_base = audio_time_base;
+    a_ocodec_ctx_->time_base = a_in_stream_->time_base;
+    a_ocodec_ctx_->sample_fmt = AV_SAMPLE_FMT_FLTP;
+
+    if (av_ofmt_ctx_->oformat->flags & AVFMT_GLOBALHEADER) {
+        a_ocodec_ctx_->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+    }
+
+    // 打开输出音频编码器 context
+    ret = avcodec_open2(v_ocodec_ctx_, a_output_codec_, NULL);
+    if (ret < 0) {
+        console.error("Failed to open output audio encoder context: %d", ret);
+        return ret;
+    }
+
+    // 添加视频流
+    assert(v_out_stream_ == nullptr);
+    v_out_stream_ = avformat_new_stream(av_ofmt_ctx_, v_output_codec_);
+    assert(v_out_stream_ != nullptr);
+
+    v_out_stream_->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+    v_out_stream_->codecpar->codec_id = v_output_codec_->id;
+
+    // 复制视频编解码器参数
+    ret = avcodec_parameters_from_context(v_out_stream_->codecpar, v_ocodec_ctx_);
+    // 注：读取视频文件时使用
+    //ret = avcodec_parameters_to_context(v_out_stream_, v_out_stream_->codecpar);
+
+    //v_out_stream_->codec = v_ocodec_ctx_->codec;
+    v_out_stream_->id    = v_ocodec_ctx_->codec_id;
+    v_out_stream_->codecpar->codec_tag = 0;
+
+    // 添加音频流
+    assert(a_out_stream_ == nullptr);
+    a_out_stream_ = avformat_new_stream(av_ofmt_ctx_, a_output_codec_);
+    assert(a_out_stream_ != nullptr);
+
+    a_out_stream_->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
+    a_out_stream_->codecpar->codec_id = a_output_codec_->id;
+
+    // 复制音频的编解码器参数
+    ret = avcodec_parameters_from_context(a_out_stream_->codecpar, a_ocodec_ctx_);
+    // 注：读取音频文件时使用
+    //ret = avcodec_parameters_to_context(a_out_stream_, a_out_stream_->codecpar);
+
+    //a_out_stream_->codec = a_ocodec_ctx_->codec;
+    a_out_stream_->id    = a_ocodec_ctx_->codec_id;
+    a_out_stream_->codecpar->codec_tag = 0;
+
+    return ret;
+}
+
+int transform_video_format(AVFrame * src_frame, AVPixelFormat src_format,
+                           AVFrame * dest_frame, AVPixelFormat dest_format)
+{
+    if (src_frame->format != src_format) {
+        console.error("Input frame is not in YUV422P format\n");
         return -1;
     }
-    a_input_fmt_ = a_input_fmt;
 
-    av_dict_free(&options);
+    if (dest_frame->format != dest_format) {
+        console.error("Output frame is not in YUV420P format\n");
+        return -1;
+    }
 
-    avformat_close_input(&v_ifmt_ctx);
+    // 检查输入和输出帧的宽度和高度是否一致
+    if (src_frame->width != dest_frame->width || src_frame->height != dest_frame->height) {
+        console.error("Input and output frame dimensions do not match\n");
+        return -1;
+    }
+
+    // 创建 SwsContext 用于格式转换
+    SwsContext * sws_ctx = sws_getContext(
+        src_frame->width, src_frame->height, src_format,
+        dest_frame->width, dest_frame->height, dest_format,
+        SWS_BILINEAR, NULL, NULL, NULL);
+
+    if (!sws_ctx) {
+        console.error("Could not initialize the conversion context\n");
+        return -1;
+    }
+
+    // 执行格式转换
+    int ret = sws_scale(sws_ctx,
+                        (const uint8_t * const *)src_frame->data, src_frame->linesize,
+                        0, src_frame->height,
+                        dest_frame->data, dest_frame->linesize);
+
+    // 释放 SwsContext
+    sws_freeContext(sws_ctx);
+    return ret;
+}
+
+int CameraRecoder::avcodec_encode_video_frame(AVFormatContext * av_ofmt_ctx,
+                                              AVCodecContext * v_icodec_ctx,
+                                              AVCodecContext * v_ocodec_ctx,
+                                              AVStream * v_in_stream,
+                                              AVStream * v_out_stream,
+                                              AVFrame * srcFrame, size_t frame_index)
+{
+    int ret;
+    // 创建一个 YUV420P 格式的 AVFrame
+    fSmartPtr<AVFrame> destFrame = av_frame_alloc();
+    if (destFrame == NULL) {
+        console.error("Failed to create destination video framen");
+        return AVERROR(ENOMEM);
+    }
+
+    AVPixelFormat src_format = v_icodec_ctx->pix_fmt;
+    AVPixelFormat dest_format = v_ocodec_ctx->pix_fmt;
+
+    ret = av_frame_copy_props(destFrame, srcFrame);
+
+    destFrame->width  = srcFrame->width;
+    destFrame->height = srcFrame->height;
+    destFrame->pkt_duration = srcFrame->pkt_duration;
+    destFrame->pkt_size = srcFrame->pkt_size;
+    destFrame->format = (int)dest_format;
+    destFrame->pict_type = AV_PICTURE_TYPE_NONE;
+
+    // 为 YUV420P 格式的 Frame 分配内存
+    ret = av_frame_get_buffer(destFrame, 32);
+    if (ret < 0) {
+        console.error("Could not allocate destination video frame data\n");
+        return -1;
+    }
+
+    ret = av_frame_make_writable(destFrame);
+    assert(ret == 0);
+
+    // 调用转换函数
+    ret = transform_video_format(srcFrame, src_format, destFrame, dest_format);
+    if (ret < 0) {
+        console.error("Failed to convert YUV422P to YUV420P: %d", ret);
+        return ret;
+    }
+
+    // 输出视频编码
+    ret = avcodec_send_frame(v_ocodec_ctx, destFrame);
+    if (ret < 0) {
+        console.error("发送视频数据包到编码器时出错\n");
+        return ret;
+    }
+    while (1) {
+        fSmartPtr<AVPacket> packet = av_packet_alloc();
+        ret = avcodec_receive_packet(v_ocodec_ctx, packet);
+        if (ret == 0) {
+            // See: https://www.cnblogs.com/leisure_chn/p/10584901.html
+            // See: https://www.cnblogs.com/leisure_chn/p/10584925.html
+            packet->stream_index = v_out_stream->index;
+            if (packet->pts == AV_NOPTS_VALUE) {
+                // Write PTS
+                AVRational time_base = v_in_stream->time_base;
+                // Duration between 2 frames (us)
+                double duration = (double)AV_TIME_BASE / av_q2d(v_in_stream->r_frame_rate);
+                // Parameters
+                packet->pts = (int64_t)((double)(frame_index * duration) / (double)(av_q2d(time_base) * AV_TIME_BASE));
+                packet->dts = packet->pts;
+                packet->duration = (int64_t)((double)duration / (double)(av_q2d(time_base) * AV_TIME_BASE));
+            }
+            else {
+                av_packet_rescale_ts(packet, v_in_stream->time_base, v_out_stream->time_base);
+                //console.debug("videoPacket->duration = %d", packet->duration);
+            }
+            //ret = av_interleaved_write_frame(av_ofmt_ctx, videoPacket);
+            ret = av_write_frame(av_ofmt_ctx, packet);
+            if (ret < 0) {
+                console.error("保存编码器视频帧时出错\n");
+                ret = 0;
+            }
+            break;
+        }
+        else if (ret == AVERROR(EAGAIN)) {
+            break;
+        }
+        else if (ret == AVERROR_EOF) {
+            console.error("EOF\n");
+            break;
+        }
+        else if (ret < 0) {
+            console.error("从编码器接收视频帧时出错\n");
+            break;
+        }
+    }
+    return ret;
+}
+
+int transform_audio_format(AVCodecContext * audioCodecCtx,
+                           AVFrame * src_frame, AVSampleFormat src_format,
+                           AVFrame * dest_frame, AVSampleFormat dest_format)
+{
+    int ret = 0;
+#if 1
+    SwrContext * swr_ctx = swr_alloc();
+    if (swr_ctx == NULL) {
+        console.error("Could not allocate SwrContext\n");
+        return -1;
+    }
+
+    // 配置 SwrContext
+    ret = av_opt_set_int(swr_ctx, "in_channel_count",   src_frame->channels, 0);
+    ret = av_opt_set_int(swr_ctx, "out_channel_count",  dest_frame->channels, 0);
+    ret = av_opt_set_int(swr_ctx, "in_channel_layout",  AV_CH_LAYOUT_STEREO, 0);
+    ret = av_opt_set_int(swr_ctx, "out_channel_layout", AV_CH_LAYOUT_STEREO, 0);
+    ret = av_opt_set_int(swr_ctx, "in_sample_rate",  44100, 0);
+    ret = av_opt_set_int(swr_ctx, "out_sample_rate", 48000, 0);
+    ret = av_opt_set_sample_fmt(swr_ctx, "in_sample_fmt",  AV_SAMPLE_FMT_S16,  0);
+    ret = av_opt_set_sample_fmt(swr_ctx, "out_sample_fmt", AV_SAMPLE_FMT_FLTP, 0);
+
+    ret = swr_init(swr_ctx);
+    if (ret < 0) {
+        console.error("Could not initialize SwrContext\n");
+        swr_free(&swr_ctx);
+        return -1;
+    }
+
+    // 执行格式转换
+    ret = swr_convert_frame(swr_ctx, dest_frame, src_frame);
+    if (ret < 0) {
+        console.error("Error converting PCM_S16LE to FLTP\n");
+        swr_free(&swr_ctx);
+        return -1;
+    }
+
+    swr_free(&swr_ctx);
+#else
+    // 初始化 SwrContext 用于样本格式转换
+    SwrContext * swr_ctx = swr_alloc_set_opts(
+        NULL,
+        audioCodecCtx->channel_layout,
+        dest_format,
+        audioCodecCtx->sample_rate,
+        src_frame->channel_layout,
+        src_format,
+        src_frame->sample_rate,
+        0, NULL);
+    if (swr_ctx == NULL)
+        return -1;
+
+    // 转换 PCM 数据到 AAC 帧
+    ret = swr_convert(swr_ctx, dest_frame->data,
+                      dest_frame->nb_samples,
+                      (const uint8_t **)src_frame->data,
+                      src_frame->nb_samples);
+
+    // 释放 SwrContext
+    swr_free(&swr_ctx);
+#endif
+    return ret;
+}
+
+int CameraRecoder::avcodec_encode_audio_frame(AVFormatContext * av_ofmt_ctx,
+                                              AVCodecContext * a_icodec_ctx,
+                                              AVCodecContext * a_ocodec_ctx,
+                                              AVStream * a_in_stream,
+                                              AVStream * a_out_stream,
+                                              AVFrame * srcFrame, size_t frame_index)
+{
+    int ret;
+    // 创建一个 AAC 格式的 Frame
+    fSmartPtr<AVFrame> destFrame = av_frame_alloc();
+    if (destFrame == NULL) {
+        console.error("Failed to create destination audio frame");
+        return AVERROR(ENOMEM);
+    }
+
+    AVSampleFormat src_format = a_icodec_ctx->sample_fmt;
+    AVSampleFormat dest_format = a_ocodec_ctx->sample_fmt;
+
+    ret = av_frame_copy_props(destFrame, srcFrame);
+
+    destFrame->channels  = a_ocodec_ctx->channels;
+    destFrame->sample_rate = a_ocodec_ctx->sample_rate;
+    destFrame->channel_layout = a_ocodec_ctx->channel_layout;
+    destFrame->nb_samples = a_ocodec_ctx->frame_size;
+    destFrame->pkt_duration = srcFrame->pkt_duration;
+    //destFrame->pkt_size = a_ocodec_ctx->frame_size;
+    destFrame->format = (int)dest_format;
+
+    // 为 AAC 格式的 Frame 分配内存
+    ret = av_frame_get_buffer(destFrame, 32);
+    if (ret < 0) {
+        console.error("Could not allocate destination audio frame data\n");
+        return ret;
+    }
+
+    ret = av_frame_make_writable(destFrame);
+    assert(ret == 0);
+
+    // 调用转换函数
+    ret = transform_audio_format(a_ocodec_ctx, srcFrame, src_format, destFrame, dest_format);
+    if (ret < 0) {
+        console.error("Failed to convert PCM_S16LE to AAC: %d", ret);
+        return ret;
+    }
+
+    // 输出视频编码
+    ret = avcodec_send_frame(a_ocodec_ctx, destFrame);
+    if (ret < 0) {
+        console.error("发送音频数据包到编码器时出错\n");
+        return ret;
+    }
+    while (1) {
+        fSmartPtr<AVPacket> packet = av_packet_alloc();
+        ret = avcodec_receive_packet(a_ocodec_ctx, packet);
+        if (ret == 0) {
+            // See: https://www.cnblogs.com/leisure_chn/p/10584901.html
+            // See: https://www.cnblogs.com/leisure_chn/p/10584925.html
+            packet->stream_index = a_out_stream->index;
+            if (packet->pts == AV_NOPTS_VALUE) {
+                // Write PTS
+                AVRational time_base = a_in_stream->time_base;
+                // Duration between 2 frames (us)
+                double duration = (double)AV_TIME_BASE / av_q2d(a_in_stream->r_frame_rate);
+                // Parameters
+                packet->pts = (int64_t)((double)(frame_index * duration) / (double)(av_q2d(time_base) * AV_TIME_BASE));
+                packet->dts = packet->pts;
+                packet->duration = (int64_t)((double)duration / (double)(av_q2d(time_base) * AV_TIME_BASE));
+            }
+            else {
+                if (!av_q2d_eq(a_in_stream->time_base, a_out_stream->time_base)) {
+                    av_packet_rescale_ts(packet, a_in_stream->time_base, a_out_stream->time_base);
+                }
+                console.debug("audioPacket->duration = %d", packet->duration);
+            }
+            //ret = av_interleaved_write_frame(av_ofmt_ctx, audioPacket);
+            ret = av_write_frame(av_ofmt_ctx, packet);
+            if (ret < 0) {
+                console.error("保存编码器音频帧时出错\n");
+                ret = 0;
+            }
+            break;
+        }
+        else if (ret == AVERROR(EAGAIN)) {
+            break;
+        }
+        else if (ret == AVERROR_EOF) {
+            console.error("EOF\n");
+            break;
+        }
+        else if (ret < 0) {
+            console.error("从编码器接收音频帧时出错\n");
+            break;
+        }
+    }
+    return ret;
+}
+
+int CameraRecoder::start()
+{
+    int ret = AVERROR_UNKNOWN;
+    if (!inited_) {
+        return AVERROR(EINVAL);
+    }
+
+    if (v_out_stream_ == nullptr || a_out_stream_ == nullptr) {
+        return AVERROR(EINVAL);
+    }
+
+    // 打开输出文件
+    if (!(av_ofmt_ctx_->oformat->flags & AVFMT_NOFILE)) {
+        ret = avio_open(&av_ofmt_ctx_->pb, output_file_.c_str(), AVIO_FLAG_WRITE);
+        if (ret < 0) {
+            console.error("Failed to open the output file: %d", ret);
+            return ret;
+        }
+    }
+
+    // 写入文件头
+    ret = avformat_write_header(av_ofmt_ctx_, NULL);
+    if (ret < 0) {
+        console.error("Failed to write the output file header: %d", ret);
+        return ret;
+    }
+
+    // 读取输入视频、音频，解码后，重新编码，写入文件
+    int ret2;
+    int64_t v_cur_pts = 0, a_cur_pts = 0;
+    size_t v_frame_index = 0, a_frame_index = 0;
+    bool is_exit = false;
+
+    // Duration between 2 frames (us)
+    double v_duration = ((double)AV_TIME_BASE / av_q2d(v_in_stream_->r_frame_rate));
+    double v_time_base = (av_q2d(v_in_stream_->time_base) * AV_TIME_BASE);
+    int64_t v_duration_64 = (int64_t)(v_duration / v_time_base);
+
+    // Duration between 2 frames (us)
+    AVRational r_sample_rate = { a_in_stream_->codecpar->sample_rate, 1 };
+    double a_duration = ((double)AV_TIME_BASE / av_q2d(r_sample_rate));
+    double a_time_base = (av_q2d(a_in_stream_->time_base) * AV_TIME_BASE);
+    int64_t a_duration_64 = (int64_t)(a_duration / a_time_base);
+
+    while (1) {
+        // Video
+        do {
+            fSmartPtr<AVPacket> packet = av_packet_alloc();
+            ret = av_read_frame(v_ifmt_ctx_, packet);
+            if (ret < 0) {
+                is_exit = true;
+                break;
+            }
+            if (packet->stream_index == v_stream_index_) {
+                // See: https://www.cnblogs.com/leisure_chn/p/10584910.html
+                //av_packet_rescale_ts(packet, v_in_stream_->time_base, v_ifmt_ctx_->time_base);
+
+                // 发送输入视频帧到解码器
+                ret = avcodec_send_packet(v_icodec_ctx_, packet);
+                if (ret < 0) {
+                    console.error("Failed to send input video decoder send packet: %d", ret);
+                    is_exit = true;
+                    break;
+                }
+
+                while (1) {
+                    fSmartPtr<AVFrame> frame = av_frame_alloc();
+                    ret = av_frame_is_writable(frame);
+                    // 解码器接受输入视频帧
+                    ret = avcodec_receive_frame(v_icodec_ctx_, frame);
+                    if (ret == 0) {
+                        ret = av_frame_make_writable(frame);
+
+                        // Get the stream of the input codec context
+
+                        // 将解码后的视频帧转换为输出视频的格式, 并保存
+                        ret2 = avcodec_encode_video_frame(av_ofmt_ctx_, v_icodec_ctx_, v_ocodec_ctx_,
+                                                          v_in_stream_, v_out_stream_,
+                                                          frame, v_frame_index);
+                        if (ret2 < 0 && ret2 != AVERROR(EAGAIN)) {
+                            is_exit = true;
+                        }
+                        else {
+                            if (ret2 != AVERROR(EAGAIN)) {
+                                v_frame_index++;
+                                console.debug("v_frame_index = %d\n", v_frame_index + 1);
+                                if (v_frame_index > 200) {
+                                    is_exit = true;
+                                    break;
+                                }
+                            }
+                        }
+                        break;
+                    }
+                    else if (ret == AVERROR(EAGAIN)) {
+                        console.error("avcodec_receive_frame(): AVERROR(EAGAIN)\n");
+                        continue;
+                    }
+                    else if (ret == AVERROR_EOF) {
+                        console.error("avcodec_receive_frame(): EOF\n");
+                        break;
+                    } else if (ret < 0) {
+                        console.error("Failed to receive frame from input video decoder: %d", ret);
+                        is_exit = true;
+                        break;
+                    }
+                }
+                if (is_exit)
+                    break;
+            }
+        } while (0);
+
+        if (is_exit)
+            break;
+    }
+
+    // 写入文件尾
+    ret = av_write_trailer(av_ofmt_ctx_);
+    ret = avformat_flush(av_ofmt_ctx_);
+
     return 0;
 }
 
