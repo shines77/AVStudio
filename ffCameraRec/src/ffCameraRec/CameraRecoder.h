@@ -3,6 +3,8 @@
 #include <stdint.h>
 #include <string>
 
+#include "av_time_stamp.h"
+
 struct AVInputFormat;
 struct AVFormatContext;
 struct AVCodecContext;
@@ -33,13 +35,13 @@ protected:
                                    AVCodecContext * v_ocodec_ctx,
                                    AVStream * v_in_stream,
                                    AVStream * v_out_stream,
-                                   AVFrame * srcFrame, size_t frame_index);
+                                   AVFrame * src_frame, size_t & frame_index);
     int avcodec_encode_audio_frame(AVFormatContext * av_ofmt_ctx,
                                    AVCodecContext * a_icodec_ctx,
                                    AVCodecContext * a_ocodec_ctx,
                                    AVStream * a_in_stream,
                                    AVStream * a_out_stream,
-                                   AVFrame * srcFrame, size_t frame_index);
+                                   AVFrame * src_frame, size_t & frame_index);
 
 protected:
     // Input
@@ -78,6 +80,12 @@ protected:
 
     int v_stream_index_;
     int a_stream_index_;
+
+    av_time_stamp vi_time_stamp_;
+    av_time_stamp ai_time_stamp_;
+
+    int64_t v_start_time_;
+    int64_t a_start_time_;
 
     std::string output_file_;
 
