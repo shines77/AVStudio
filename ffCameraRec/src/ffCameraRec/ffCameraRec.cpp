@@ -16,12 +16,14 @@ extern "C" {
 #include <libavutil/log.h>
 }
 
-#include "AVConsole.h"
+#include "global.h"
+#include "CameraRecoder.h"
+
+#define OUTPUT_FILENAME "output.mp4"
 
 void console_test()
 {
-    av::StdConsole console;
-    console.set_log_level(av::LogLevel::Info);
+    console.set_log_level(av::LogLevel::Error);
 
     console.fatal("This a fatal message.");
     console.error("This a error message.");
@@ -42,7 +44,7 @@ void console_test()
     }
 
     av::StdFileLog file_log("test.log", false);
-    file_log.set_log_level(av::LogLevel::Info);
+    file_log.set_log_level(av::LogLevel::Error);
 
     file_log.println("Hello world!");
     file_log.fatal("This a fatal message.");
@@ -66,10 +68,22 @@ void console_test()
 
 int main(int argc, const char * argv[])
 {
-    av::Console console;
-    console.println("Hello world!");
+#if LIBAVFORMAT_BUILD < AV_VERSION_INT(58, 9, 100)
+    // 该函数从 avformat 库的 58.9.100 版本开始被废弃
+    // (2018-02-06, 大约是 FFmepg 4.0 版本)
+    av_register_all();
+#endif
 
-    console_test();
+    avdevice_register_all();
+    avformat_network_init();
+
+    av_log_set_level(AV_LOG_INFO);
+    console.set_log_level(av::LogLevel::Error);
+
+    CameraRecoder camera_recoder;
+    camera_recoder.init(OUTPUT_FILENAME);
+
+    avformat_network_deinit();
 
     return 0;
 }
