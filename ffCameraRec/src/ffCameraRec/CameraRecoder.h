@@ -15,6 +15,9 @@ struct AVFrame;
 enum AVPixelFormat;
 enum AVSampleFormat;
 
+class sws_video;
+class swr_audio;
+
 class CameraRecoder
 {
 public:
@@ -75,6 +78,9 @@ protected:
 
     // Output file
     AVFormatContext * av_ofmt_ctx_;
+
+    sws_video * sws_video_;
+    swr_audio * swr_audio_;
 
     bool inited_;
 
