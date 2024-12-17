@@ -77,7 +77,7 @@ int main(int argc, const char * argv[])
     avdevice_register_all();
     avformat_network_init();
 
-    av_log_set_level(AV_LOG_FATAL);
+    av_log_set_level(AV_LOG_INFO);
     console.set_log_level(av::LogLevel::Error);
 
     int ret;

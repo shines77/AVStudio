@@ -58,7 +58,7 @@ int sws_video::convert(AVFrame * src_frame, AVPixelFormat src_format,
             return ret;
         }
         int64_t end_time = av_gettime_relative();
-        console.info("sws_video::convert elapsed time: %d", (int)(end_time - start_time));
+        //console.info("sws_video::convert elapsed time: %d", (int)(end_time - start_time));
     }
     return ret;
 }
