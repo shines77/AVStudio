@@ -62,7 +62,7 @@ int swr_audio::convert(AVFrame * src_frame, AVSampleFormat src_format,
             return ret;
         }
         int64_t end_time = av_gettime_relative();
-        console.info("swr_audio::convert() elapsed time: %d", (int)(end_time - start_time));
+        //console.info("swr_audio::convert() elapsed time: %d", (int)(end_time - start_time));
     }
     return ret;
 }

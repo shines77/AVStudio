@@ -95,8 +95,8 @@ int main(int argc, const char * argv[])
     avformat_network_deinit();
 
 #if defined(_WIN32) || defined(_WIN64)
-    console.println("");
-    ::system("pause");
+    //console.println("");
+    //::system("pause");
 #endif
     return 0;
 }

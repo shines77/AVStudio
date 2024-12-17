@@ -48,8 +48,7 @@ protected:
 
 protected:
     // Input
-    AVInputFormat * v_input_fmt_;
-    AVInputFormat * a_input_fmt_;
+    AVInputFormat * av_input_fmt_;
 
     AVFormatContext * v_ifmt_ctx_;
     AVFormatContext * a_ifmt_ctx_;

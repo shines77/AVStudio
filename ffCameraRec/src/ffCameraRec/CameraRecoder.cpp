@@ -20,6 +20,7 @@ extern "C" {
 #include "string_utils.h"
 #include "fSmartPtr.h"
 #include "DShowDevice.h"
+#include "StopWatch.h"
 
 #include "sws_video.h"
 #include "swr_audio.h"
@@ -32,8 +33,7 @@ CameraRecoder::CameraRecoder()
     inited_ = false;
 
     // Input
-    v_input_fmt_ = nullptr;
-    a_input_fmt_ = nullptr;
+    av_input_fmt_ = nullptr;
 
     v_ifmt_ctx_ = nullptr;
     a_ifmt_ctx_ = nullptr;
@@ -156,8 +156,7 @@ void CameraRecoder::cleanup()
     a_ocodec_ctx_ = nullptr;
 
     // Input video & audio
-    v_input_fmt_ = nullptr;
-    a_input_fmt_ = nullptr;
+    av_input_fmt_ = nullptr;
 
     if (sws_video_) {
         sws_video_->cleanup();
@@ -192,9 +191,9 @@ int CameraRecoder::init(const std::string & output_file)
     ret = av_dict_set(&device_options, "list_devices", "true", 0);
 
     // 创建 dshow 视频 input format
-    assert(v_input_fmt_ == nullptr);
-    v_input_fmt_ = av_find_input_format("dshow");
-    if (v_input_fmt_ == nullptr) {
+    assert(av_input_fmt_ == nullptr);
+    av_input_fmt_ = av_find_input_format("dshow");
+    if (av_input_fmt_ == nullptr) {
         console.error("Could not find input video format");
         return AVERROR(ENOSYS);
     }
@@ -233,7 +232,7 @@ int CameraRecoder::init(const std::string & output_file)
 #if 0
     // 打开一个虚拟的输入流以枚举设备 (从 FFmpeg 4.2.10 已失效, 仅用于查询设备列表, 不能返回)
     assert(v_ifmt_ctx_ == nullptr);
-    ret = avformat_open_input(&v_ifmt_ctx_, "video=dummy", v_input_fmt_, &options);
+    ret = avformat_open_input(&v_ifmt_ctx_, "video=dummy", av_input_fmt_, &options);
     if (ret < 0) {
         char error_buf[AV_ERROR_MAX_STRING_SIZE];
         av_strerror(ret, error_buf, sizeof(error_buf));
@@ -246,7 +245,7 @@ int CameraRecoder::init(const std::string & output_file)
 
     // 打开视频设备
     assert(v_ifmt_ctx_ == nullptr);
-    ret = avformat_open_input(&v_ifmt_ctx_, video_url, v_input_fmt_, NULL);
+    ret = avformat_open_input(&v_ifmt_ctx_, video_url, av_input_fmt_, NULL);
     if (ret < 0) {
         console.error("Could not open input video device: %d", ret);
         return ret;
@@ -300,24 +299,16 @@ int CameraRecoder::init(const std::string & output_file)
 #if 0
     // 列出视频设备 (方法已失效)
     AVDeviceInfoList * videoDeviceList = NULL;
-    ret = avdevice_list_input_sources(v_input_fmt_, NULL, NULL, &videoDeviceList);
+    ret = avdevice_list_input_sources(av_input_fmt_, NULL, NULL, &videoDeviceList);
     if (ret < 0) {
         console.error("Could not list video devices: %d", ret);
         return ret;
     }
 #endif
 
-    // 创建 dshow 音频 input format
-    assert(a_input_fmt_ == nullptr);
-    a_input_fmt_ = av_find_input_format("dshow");
-    if (a_input_fmt_ == nullptr) {
-        console.error("Could not find input audio format\n");
-        return AVERROR(ENOSYS);
-    }
-
     // 打开音频设备
     assert(a_ifmt_ctx_ == nullptr);
-    ret = avformat_open_input(&a_ifmt_ctx_, audio_url, a_input_fmt_, NULL);
+    ret = avformat_open_input(&a_ifmt_ctx_, audio_url, av_input_fmt_, NULL);
     if (ret < 0) {
         console.error("Could not open input audio device: %d", ret);
         return ret;
@@ -365,7 +356,7 @@ int CameraRecoder::init(const std::string & output_file)
 
     // AV_CODEC_ID_RAWVIDEO (13): "RawVideo"
     v_icodec_ctx_->codec_id = v_in_stream_->codecpar->codec_id;
-    v_icodec_ctx_->bit_rate = 4000000;
+    //v_icodec_ctx_->bit_rate = 4000000;
     v_icodec_ctx_->codec_type = AVMEDIA_TYPE_VIDEO;
     v_icodec_ctx_->width = v_in_stream_->codecpar->width;
     v_icodec_ctx_->height = v_in_stream_->codecpar->height;
@@ -404,7 +395,7 @@ int CameraRecoder::init(const std::string & output_file)
     // AV_CODEC_ID_PCM_S16LE (65536)
     a_icodec_ctx_->codec_id = a_in_stream_->codecpar->codec_id;
     a_icodec_ctx_->codec_type = AVMEDIA_TYPE_AUDIO;
-    a_icodec_ctx_->bit_rate = a_ifmt_ctx_->bit_rate;
+    //a_icodec_ctx_->bit_rate = a_ifmt_ctx_->bit_rate;
     a_icodec_ctx_->channels = a_in_stream_->codecpar->channels;
     a_icodec_ctx_->sample_rate = a_in_stream_->codecpar->sample_rate;
     // 麦克风默认是单声道的, 实际值是：AV_CH_LAYOUT_STEREO
@@ -503,13 +494,13 @@ int CameraRecoder::create_encoders()
     a_ocodec_ctx_ = avcodec_alloc_context3(a_output_codec_);
     assert(a_ocodec_ctx_ != nullptr);
 
-    AVRational audio_time_base = { 1, 48000 };
+    AVRational audio_time_base = { 1, 44100 };
 
     a_ocodec_ctx_->bit_rate = 128000;
     a_ocodec_ctx_->codec_id = AV_CODEC_ID_AAC;
     a_ocodec_ctx_->codec_type = AVMEDIA_TYPE_AUDIO;
     a_ocodec_ctx_->channels = 2;
-    a_ocodec_ctx_->sample_rate = 48000;
+    a_ocodec_ctx_->sample_rate = 44100;
     a_ocodec_ctx_->channel_layout = av_get_default_channel_layout(a_ocodec_ctx_->channels);
     a_ocodec_ctx_->time_base = audio_time_base;
     //a_ocodec_ctx_->time_base = a_in_stream_->time_base;
@@ -737,8 +728,8 @@ int transform_audio_format(AVFrame * src_frame, AVSampleFormat src_format,
     ret = av_opt_set_int(swr_ctx, "out_channel_count",  dest_frame->channels, 0);
     ret = av_opt_set_int(swr_ctx, "in_channel_layout",  AV_CH_LAYOUT_STEREO, 0);
     ret = av_opt_set_int(swr_ctx, "out_channel_layout", AV_CH_LAYOUT_STEREO, 0);
-    ret = av_opt_set_int(swr_ctx, "in_sample_rate",  44100, 0);
-    ret = av_opt_set_int(swr_ctx, "out_sample_rate", 48000, 0);
+    ret = av_opt_set_int(swr_ctx, "in_sample_rate",  src_frame->sample_rate, 0);
+    ret = av_opt_set_int(swr_ctx, "out_sample_rate", dest_frame->sample_rate, 0);
     ret = av_opt_set_sample_fmt(swr_ctx, "in_sample_fmt",  AV_SAMPLE_FMT_S16,  0);
     ret = av_opt_set_sample_fmt(swr_ctx, "out_sample_fmt", AV_SAMPLE_FMT_FLTP, 0);
 
@@ -794,6 +785,8 @@ int CameraRecoder::avcodec_encode_audio_frame(AVFormatContext * av_ofmt_ctx,
                                               AVFrame * src_frame, size_t & frame_index)
 {
     int ret;
+    StopWatch sw;
+    sw.start();
     // 创建一个 AAC 格式的 Frame
     fSmartPtr<AVFrame> dest_frame = av_frame_alloc();
     if (dest_frame == NULL) {
@@ -814,7 +807,9 @@ int CameraRecoder::avcodec_encode_audio_frame(AVFormatContext * av_ofmt_ctx,
     dest_frame->pkt_size = a_ocodec_ctx->frame_size;
     dest_frame->format = (int)dest_format;
 
-    av_frame_rescale_ts(dest_frame, a_icodec_ctx->time_base, a_ocodec_ctx->time_base);
+    if (!av_q2d_eq(a_icodec_ctx->time_base, a_ocodec_ctx->time_base)) {
+        av_frame_rescale_ts(dest_frame, a_icodec_ctx->time_base, a_ocodec_ctx->time_base);
+    }
 
     // 为 AAC 格式的 Frame 分配内存
     ret = av_frame_get_buffer(dest_frame, 32);
@@ -852,14 +847,22 @@ int CameraRecoder::avcodec_encode_audio_frame(AVFormatContext * av_ofmt_ctx,
     }
 
     // 输出音频编码
+    StopWatch sw1;
+    sw1.start();
     ret = avcodec_send_frame(a_ocodec_ctx, dest_frame);
+    sw1.stop();
+    //sw1.print_elapsed_time_stamp("avcodec_send_frame(a_ocodec_ctx, dest_frame)");
     if (ret < 0) {
         console.error("发送音频数据包到编码器时出错\n");
         return ret;
     }
     while (1) {
         fSmartPtr<AVPacket> packet = av_packet_alloc();
+        StopWatch sw2;
+        sw2.start();
         ret = avcodec_receive_packet(a_ocodec_ctx, packet);
+        sw2.stop();
+        //sw2.print_elapsed_time_stamp("avcodec_receive_packet(a_ocodec_ctx, packet)");
         if (ret == 0) {
             // See: https://www.cnblogs.com/leisure_chn/p/10584901.html
             // See: https://www.cnblogs.com/leisure_chn/p/10584925.html
@@ -896,6 +899,8 @@ int CameraRecoder::avcodec_encode_audio_frame(AVFormatContext * av_ofmt_ctx,
             break;
         }
     }
+    sw.stop();
+    //sw.print_elapsed_time_stamp("avcodec_encode_audio_frame()");
     return ret;
 }
 
@@ -943,6 +948,7 @@ int CameraRecoder::start()
     int64_t v_cur_pts = 0, a_cur_pts = 0;
     size_t v_frame_index = 0, a_frame_index = 0;
     size_t v_oframe_index = 0, a_oframe_index = 0;
+    size_t a_raw_frame_index = 0;
     bool is_exit = false;
 
 #if 0
@@ -960,12 +966,13 @@ int CameraRecoder::start()
 
     AVRational time_base_q = { 1, AV_TIME_BASE };
     //start_time_ = av_gettime_relative();
+    StopWatch sw_global;
 
     while (1) {
         // Video
         do {
             fSmartPtr<AVPacket> packet = av_packet_alloc();
-            //break;
+            break;
             ret = av_read_frame(v_ifmt_ctx_, packet);
             if (ret < 0) {
                 is_exit = true;
@@ -1053,11 +1060,15 @@ int CameraRecoder::start()
         // Audio
         do {
             fSmartPtr<AVPacket> packet = av_packet_alloc();
+            sw_global.start();
             ret = av_read_frame(a_ifmt_ctx_, packet);
+            sw_global.print_elapsed_time_ms("Audio processing");
             if (ret < 0) {
                 is_exit = true;
                 break;
             }
+            //a_raw_frame_index++;
+            //console.debug("a_raw_frame_index = %d", a_raw_frame_index);
             if (packet->stream_index == a_stream_index_) {
 #if 0
                 // See: https://www.cnblogs.com/leisure_chn/p/10584910.html
@@ -1085,11 +1096,14 @@ int CameraRecoder::start()
                     break;
                 }
                 while (1) {
+                    //a_raw_frame_index++;
+                    //console.debug("a_raw_frame_index = %d", a_raw_frame_index);
                     fSmartPtr<AVFrame> frame = av_frame_alloc();
                     ret = av_frame_is_writable(frame);
                     ret = avcodec_receive_frame(a_icodec_ctx_, frame);
                     if (ret == 0) {
                         ret = av_frame_make_writable(frame);
+                        //sw_global.print_elapsed_time_ms("Audio processing");
                         // 将编码后的音频帧转换为输出音频的格式, 并保存
                         ret2 = avcodec_encode_audio_frame(av_ofmt_ctx_, a_icodec_ctx_, a_ocodec_ctx_,
                                                           a_in_stream_, a_out_stream_,
@@ -1102,6 +1116,8 @@ int CameraRecoder::start()
                             if (ret2 != AVERROR(EAGAIN)) {
                                 a_frame_index++;
                                 console.debug("a_frame_index = %d", a_frame_index + 1);
+                                //sw_global.stop();
+                                //sw_global.print_elapsed_time_ms("Audio processing");
                                 if (a_frame_index > 50) {
                                     is_exit = true;
                                     break;
