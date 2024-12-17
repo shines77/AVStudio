@@ -174,11 +174,13 @@ void CameraRecoder::cleanup()
 
     if (sws_video_) {
         sws_video_->cleanup();
+        delete sws_video_;
         sws_video_ = nullptr;
     }
 
     if (swr_audio_) {
         swr_audio_->cleanup();
+        delete swr_audio_;
         swr_audio_ = nullptr;
     }
 
@@ -277,7 +279,7 @@ int CameraRecoder::init(const std::string & output_file)
 
     av_dict_free(&input_video_options);
 
-#if 0
+#if 1
     ret = avformat_find_stream_info(v_ifmt_ctx_, NULL);
     if (ret < 0) {
         console.error("Could not open input video stream: %d", ret);
@@ -352,7 +354,7 @@ int CameraRecoder::init(const std::string & output_file)
 
     av_dict_free(&input_audio_options);
 
-#if 0
+#if 1
     ret = avformat_find_stream_info(a_ifmt_ctx_, NULL);
     if (ret < 0) {
         console.error("Could not open input audio stream: %d", ret);
@@ -1060,8 +1062,8 @@ void CameraRecoder::video_enc_loop()
                                 //console.debug("v_frame_index = %d", v_frame_index + 1);
                                 sw_global.stop();
                                 int64_t time_us = sw_global.elapsed_time_stamp();
-                                if ((time_us + 300) < frame_duration_us) {
-                                    int64_t sleep_us = frame_duration_us - (time_us + 300);
+                                if ((time_us + 200) < frame_duration_us) {
+                                    int64_t sleep_us = frame_duration_us - (time_us + 200);
                                     av_usleep((unsigned)sleep_us);
                                     console.info("Video sleep_us: %d", (int)sleep_us);
                                 }
@@ -1116,17 +1118,15 @@ void CameraRecoder::audio_enc_loop()
     AVRational time_base_q = { 1, AV_TIME_BASE };
     bool is_exit = false;
 
-    int sample_rate = a_ocodec_ctx_->sample_rate;
     AVRational r_sample_rate = { a_ocodec_ctx_->sample_rate, 1 };
     // = AV_TIME_BASE / (num / den) = AV_TIME_BASE * den / num;
     double sample_time = (double)AV_TIME_BASE * r_sample_rate.den / r_sample_rate.num;
-    double frame_duration = sample_time * 1024;
+    double frame_duration = sample_time * a_ocodec_ctx_->frame_size;
     int64_t frame_duration_us = (int64_t)frame_duration;
 
     a_enc_entered_.store(true);
     console.info("audio_enc_loop() enter");
     while (1) {
-        break;
         sw_global.start();
         {
             std::unique_lock<std::mutex> lock(a_mutex_);
@@ -1193,16 +1193,15 @@ void CameraRecoder::audio_enc_loop()
                             if (ret2 != AVERROR(EAGAIN)) {
                                 a_frame_index++;
                                 //console.debug("a_frame_index = %d", a_frame_index + 1);
-                                //av_usleep(100);
                                 sw_global.stop();
                                 int64_t time_us = sw_global.elapsed_time_stamp();
-                                if ((time_us + 300) < frame_duration_us) {
-                                    int64_t sleep_us = frame_duration_us - (time_us + 300);
+                                if ((time_us + 200) < frame_duration_us) {
+                                    int64_t sleep_us = frame_duration_us - (time_us + 200);
                                     av_usleep((unsigned)sleep_us);
                                     console.info("Audio sleep_us: %d", (int)sleep_us);
                                 }
                                 sw_global.print_elapsed_time_ms("Audio processing");
-                                if (a_frame_index > 200) {
+                                if (a_frame_index > 400) {
                                     is_exit = true;
                                     break;
                                 }
@@ -1348,7 +1347,8 @@ int CameraRecoder::stop()
             std::lock_guard<std::mutex> lock(v_mutex_);
             v_stopflag_.store(false);
         }
-        v_enc_thread_.join();
+        if (v_enc_thread_.joinable())
+            v_enc_thread_.join();
         v_enc_entered_ = false;
     }
 
@@ -1357,7 +1357,8 @@ int CameraRecoder::stop()
             std::lock_guard<std::mutex> lock(a_mutex_);
             a_stopflag_.store(false);
         }
-        a_enc_thread_.join();
+        if (a_enc_thread_.joinable())
+            a_enc_thread_.join();
         a_enc_entered_ = false;
     }
     return 0;
