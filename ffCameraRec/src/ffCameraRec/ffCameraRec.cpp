@@ -78,18 +78,15 @@ int main(int argc, const char * argv[])
     avformat_network_init();
 
     av_log_set_level(AV_LOG_INFO);
-    console.set_log_level(av::LogLevel::Error);
+    console.set_log_level(av::LogLevel::Trace);
 
     int ret;
 
     CameraRecoder camera_recoder;
     ret = camera_recoder.init(OUTPUT_FILENAME);
     if (ret == 0) {
-        ret = camera_recoder.create_encoders();
-        if (ret == 0) {
-            console.info("camera_recoder.start();");
-            camera_recoder.start();
-        }
+        console.info("camera_recoder.start();");
+        camera_recoder.start();
     }
 
     avformat_network_deinit();

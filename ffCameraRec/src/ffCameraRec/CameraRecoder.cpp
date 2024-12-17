@@ -13,6 +13,8 @@ extern "C" {
 #include <libavutil/mathematics.h>
 }
 
+#include <stdio.h>
+#include <conio.h>      // For _getch()
 #include <math.h>
 #include <assert.h>
 
@@ -70,6 +72,12 @@ CameraRecoder::CameraRecoder()
 
     v_start_time_ = 0;
     a_start_time_ = 0;
+
+    v_enc_entered_ = false;
+    a_enc_entered_ = false;
+
+    v_stopflag_ = true;
+    a_stopflag_ = true;
 }
 
 CameraRecoder::~CameraRecoder()
@@ -157,6 +165,12 @@ void CameraRecoder::cleanup()
 
     // Input video & audio
     av_input_fmt_ = nullptr;
+
+    v_enc_entered_ = false;
+    a_enc_entered_ = false;
+
+    v_stopflag_ = true;
+    a_stopflag_ = true;
 
     if (sws_video_) {
         sws_video_->cleanup();
@@ -263,11 +277,13 @@ int CameraRecoder::init(const std::string & output_file)
 
     av_dict_free(&input_video_options);
 
+#if 0
     ret = avformat_find_stream_info(v_ifmt_ctx_, NULL);
     if (ret < 0) {
         console.error("Could not open input video stream: %d", ret);
         return ret;
     }
+#endif
 
     // 查找视频流
     int v_stream_index = -1;
@@ -336,11 +352,13 @@ int CameraRecoder::init(const std::string & output_file)
 
     av_dict_free(&input_audio_options);
 
+#if 0
     ret = avformat_find_stream_info(a_ifmt_ctx_, NULL);
     if (ret < 0) {
         console.error("Could not open input audio stream: %d", ret);
         return ret;
     }
+#endif
 
     // 查找音频流
     int a_stream_index = -1;
@@ -451,6 +469,13 @@ int CameraRecoder::init(const std::string & output_file)
     }
 
     inited_ = true;
+
+    ret = create_encoders();
+    if (ret < 0) {
+        return ret;
+    }
+
+    inited_ = true;
     return ret;
 }
 
@@ -460,6 +485,8 @@ int CameraRecoder::create_encoders()
     if (!inited_) {
         return AVERROR(EINVAL);
     }
+
+    inited_ = false;
 
     // 创建输出格式上下文
     assert(av_ofmt_ctx_ == nullptr);
@@ -726,14 +753,16 @@ int CameraRecoder::avcodec_encode_video_frame(AVFormatContext * av_ofmt_ctx,
 
             av_packet_rescale_ts(packet, v_ocodec_ctx->time_base, v_out_stream->time_base);
             //console.debug("videoPacket->duration = %d", packet->duration);
-
-            ret = av_interleaved_write_frame(av_ofmt_ctx, packet);
-            //ret = av_write_frame(av_ofmt_ctx, packet);
-            if (ret < 0) {
-                console.error("保存编码器视频帧时出错: %d\n", ret);
-                ret = 0;
+            {
+                std::unique_lock<std::mutex> lock(w_mutex_);
+                ret = av_interleaved_write_frame(av_ofmt_ctx, packet);
+                //ret = av_write_frame(av_ofmt_ctx, packet);
+                if (ret < 0) {
+                    console.error("保存编码器视频帧时出错: %d\n", ret);
+                    ret = 0;
+                }
+                break;
             }
-            break;
         }
         else if (ret == AVERROR(EAGAIN)) {
             console.error("[video] AVERROR(EAGAIN)\n");
@@ -917,13 +946,16 @@ int CameraRecoder::avcodec_encode_audio_frame(AVFormatContext * av_ofmt_ctx,
             }
             //console.debug("audioPacket->duration = %d", packet->duration);
 
-            ret = av_interleaved_write_frame(av_ofmt_ctx, packet);
-            //ret = av_write_frame(av_ofmt_ctx, packet);
-            if (ret < 0) {
-                console.error("保存编码器音频帧时出错: %d\n", ret);
-                ret = 0;
+            {
+                std::unique_lock<std::mutex> lock(w_mutex_);
+                ret = av_interleaved_write_frame(av_ofmt_ctx, packet);
+                //ret = av_write_frame(av_ofmt_ctx, packet);
+                if (ret < 0) {
+                    console.error("保存编码器音频帧时出错: %d\n", ret);
+                    ret = 0;
+                }
+                break;
             }
-            break;
         }
         else if (ret == AVERROR(EAGAIN)) {
             console.error("[audio] AVERROR(EAGAIN)");
@@ -943,76 +975,35 @@ int CameraRecoder::avcodec_encode_audio_frame(AVFormatContext * av_ofmt_ctx,
     return ret;
 }
 
-int CameraRecoder::start()
+void CameraRecoder::video_enc_loop()
 {
-    int ret = AVERROR_UNKNOWN;
-    if (!inited_) {
-        return AVERROR(EINVAL);
-    }
-
-    if (v_out_stream_ == nullptr || a_out_stream_ == nullptr) {
-        return AVERROR(EINVAL);
-    }
-
-	console.print("========== Output Information ==========\n");
-	av_dump_format(av_ofmt_ctx_, 0, output_file_.c_str(), 1);
-	console.print("========================================\n");
-
-    // 打开输出文件
-    if (!(av_ofmt_ctx_->oformat->flags & AVFMT_NOFILE)) {
-        ret = avio_open(&av_ofmt_ctx_->pb, output_file_.c_str(), AVIO_FLAG_WRITE);
-        if (ret < 0) {
-            console.error("Failed to open the output file: %d", ret);
-            return ret;
-        }
-    }
-
-    // 写入文件头
-    ret = avformat_write_header(av_ofmt_ctx_, NULL);
-    if (ret < 0) {
-        console.error("Failed to write the output file header: %d", ret);
-        return ret;
-    }
-
-	console.print("========== Output Information ==========\n");
-	av_dump_format(av_ofmt_ctx_, 0, output_file_.c_str(), 1);
-	console.print("========================================\n");
-
-    AVRational r_sample_rate = { a_icodec_ctx_->sample_rate, 1 };
-    vi_time_stamp_.init(v_icodec_ctx_->framerate, v_icodec_ctx_->time_base);
-    ai_time_stamp_.init(r_sample_rate, a_icodec_ctx_->time_base);
-
-    // 读取输入视频、音频，解码后，重新编码，写入文件
-    int ret2;
-    int64_t v_cur_pts = 0, a_cur_pts = 0;
-    size_t v_frame_index = 0, a_frame_index = 0;
-    size_t v_oframe_index = 0, a_oframe_index = 0;
-    size_t a_raw_frame_index = 0;
+    // 读取输入视频，解码后，重新编码，写入文件
+    int ret, ret2;
+    StopWatch sw_global;
+    int64_t v_cur_pts = 0;
+    size_t v_frame_index = 0;
+    size_t v_oframe_index = 0;
+    AVRational time_base_q = { 1, AV_TIME_BASE };
     bool is_exit = false;
 
-#if 0
-    // Duration between 2 frames (us)
-    double v_duration = ((double)AV_TIME_BASE / av_q2d(v_in_stream_->r_frame_rate));
-    double v_time_base = (av_q2d(v_in_stream_->time_base) * AV_TIME_BASE);
-    int64_t v_duration_64 = (int64_t)(v_duration / v_time_base);
+    AVRational frame_rate = v_ocodec_ctx_->framerate;
+    // = AV_TIME_BASE / (num / den) = AV_TIME_BASE * den / num;
+    double frame_duration = (double)AV_TIME_BASE * frame_rate.den / frame_rate.num;
+    int64_t frame_duration_us = (int64_t)frame_duration;
 
-    // Duration between 2 frames (us)
-    AVRational r_sample_rate = { a_in_stream_->codecpar->sample_rate, 1 };
-    double a_duration = ((double)AV_TIME_BASE / av_q2d(r_sample_rate));
-    double a_time_base = (av_q2d(a_in_stream_->time_base) * AV_TIME_BASE);
-    int64_t a_duration_64 = (int64_t)(a_duration / a_time_base);
-#endif
-
-    AVRational time_base_q = { 1, AV_TIME_BASE };
-    //start_time_ = av_gettime_relative();
-    StopWatch sw_global;
-
+    v_enc_entered_.store(true);
+    console.info("video_enc_loop() enter");
     while (1) {
+        sw_global.start();
+        {
+            std::unique_lock<std::mutex> lock(v_mutex_);
+            if (v_stopflag_.load()) {
+                break;
+            }
+        }
         // Video
         do {
-            sw_global.start();
             fSmartPtr<AVPacket> packet = av_packet_alloc();
-            //break;
             ret = av_read_frame(v_ifmt_ctx_, packet);
             if (ret < 0) {
                 is_exit = true;
@@ -1066,8 +1057,14 @@ int CameraRecoder::start()
                         else {
                             if (ret2 != AVERROR(EAGAIN)) {
                                 v_frame_index++;
-                                console.debug("v_frame_index = %d", v_frame_index + 1);
-                                //av_usleep(100);
+                                //console.debug("v_frame_index = %d", v_frame_index + 1);
+                                sw_global.stop();
+                                int64_t time_us = sw_global.elapsed_time_stamp();
+                                if ((time_us + 300) < frame_duration_us) {
+                                    int64_t sleep_us = frame_duration_us - (time_us + 300);
+                                    av_usleep((unsigned)sleep_us);
+                                    console.info("Video sleep_us: %d", (int)sleep_us);
+                                }
                                 sw_global.print_elapsed_time_ms("Video processing");
                                 if (v_frame_index > 200) {
                                     is_exit = true;
@@ -1102,10 +1099,43 @@ int CameraRecoder::start()
 
         if (is_exit)
             break;
+    }
+    console.info("video_enc_loop() exit");
+    v_enc_entered_.store(false);
+}
 
+void CameraRecoder::audio_enc_loop()
+{
+    // 读取输入音频，解码后，重新编码，写入文件
+    int ret, ret2;
+    StopWatch sw_global;
+    int64_t a_cur_pts = 0;
+    size_t a_frame_index = 0;
+    size_t a_oframe_index = 0;
+    size_t a_raw_frame_index = 0;
+    AVRational time_base_q = { 1, AV_TIME_BASE };
+    bool is_exit = false;
+
+    int sample_rate = a_ocodec_ctx_->sample_rate;
+    AVRational r_sample_rate = { a_ocodec_ctx_->sample_rate, 1 };
+    // = AV_TIME_BASE / (num / den) = AV_TIME_BASE * den / num;
+    double sample_time = (double)AV_TIME_BASE * r_sample_rate.den / r_sample_rate.num;
+    double frame_duration = sample_time * 1024;
+    int64_t frame_duration_us = (int64_t)frame_duration;
+
+    a_enc_entered_.store(true);
+    console.info("audio_enc_loop() enter");
+    while (1) {
+        break;
+        sw_global.start();
+        {
+            std::unique_lock<std::mutex> lock(a_mutex_);
+            if (a_stopflag_.load()) {
+                break;
+            }
+        }
         // Audio
         do {
-            sw_global.start();
             fSmartPtr<AVPacket> packet = av_packet_alloc();
             //break;
             ret = av_read_frame(a_ifmt_ctx_, packet);
@@ -1122,7 +1152,6 @@ int CameraRecoder::start()
                 av_packet_rescale_ts(packet, a_in_stream_->time_base, a_icodec_ctx_->time_base);
 #else
                 // 转换为标准time_base, 并减去起始时间
-#if 1
                 av_packet_rescale_ts(packet, a_in_stream_->time_base, time_base_q);
                 if (a_start_time_ != 0) {
                     packet->pts = packet->pts - a_start_time_;
@@ -1135,7 +1164,6 @@ int CameraRecoder::start()
                 }
                 // See: https://www.cnblogs.com/leisure_chn/p/10584910.html
                 av_packet_rescale_ts(packet, time_base_q, a_icodec_ctx_->time_base);
-#endif
 #endif
                 // 发送输入音频帧到解码器
                 int ret = avcodec_send_packet(a_icodec_ctx_, packet);
@@ -1164,9 +1192,15 @@ int CameraRecoder::start()
                         else {
                             if (ret2 != AVERROR(EAGAIN)) {
                                 a_frame_index++;
-                                console.debug("a_frame_index = %d", a_frame_index + 1);
+                                //console.debug("a_frame_index = %d", a_frame_index + 1);
                                 //av_usleep(100);
-                                //sw_global.stop();
+                                sw_global.stop();
+                                int64_t time_us = sw_global.elapsed_time_stamp();
+                                if ((time_us + 300) < frame_duration_us) {
+                                    int64_t sleep_us = frame_duration_us - (time_us + 300);
+                                    av_usleep((unsigned)sleep_us);
+                                    console.info("Audio sleep_us: %d", (int)sleep_us);
+                                }
                                 sw_global.print_elapsed_time_ms("Audio processing");
                                 if (a_frame_index > 200) {
                                     is_exit = true;
@@ -1203,14 +1237,128 @@ int CameraRecoder::start()
         if (is_exit)
             break;
     }
+    console.info("audio_enc_loop() exit");
+    a_enc_entered_.store(false);
+}
+
+int CameraRecoder::start()
+{
+    int ret = AVERROR_UNKNOWN;
+    if (!inited_) {
+        return AVERROR(EINVAL);
+    }
+
+    if (v_out_stream_ == nullptr || a_out_stream_ == nullptr) {
+        return AVERROR(EINVAL);
+    }
+
+	console.print("========== Output Information ==========\n");
+	av_dump_format(av_ofmt_ctx_, 0, output_file_.c_str(), 1);
+	console.print("========================================\n");
+
+    // 打开输出文件
+    if (!(av_ofmt_ctx_->oformat->flags & AVFMT_NOFILE)) {
+        ret = avio_open(&av_ofmt_ctx_->pb, output_file_.c_str(), AVIO_FLAG_WRITE);
+        if (ret < 0) {
+            console.error("Failed to open the output file: %d", ret);
+            return ret;
+        }
+    }
+
+    // 写入文件头
+    ret = avformat_write_header(av_ofmt_ctx_, NULL);
+    if (ret < 0) {
+        console.error("Failed to write the output file header: %d", ret);
+        return ret;
+    }
+
+	console.print("========== Output Information ==========\n");
+	av_dump_format(av_ofmt_ctx_, 0, output_file_.c_str(), 1);
+	console.print("========================================\n");
+
+    AVRational r_sample_rate = { a_icodec_ctx_->sample_rate, 1 };
+    vi_time_stamp_.init(v_icodec_ctx_->framerate, v_icodec_ctx_->time_base);
+    ai_time_stamp_.init(r_sample_rate, a_icodec_ctx_->time_base);
+
+    // 读取输入视频、音频，解码后，重新编码，写入文件
+#if 0
+    // Duration between 2 frames (us)
+    double v_duration = ((double)AV_TIME_BASE / av_q2d(v_in_stream_->r_frame_rate));
+    double v_time_base = (av_q2d(v_in_stream_->time_base) * AV_TIME_BASE);
+    int64_t v_duration_64 = (int64_t)(v_duration / v_time_base);
+
+    // Duration between 2 frames (us)
+    AVRational r_sample_rate = { a_in_stream_->codecpar->sample_rate, 1 };
+    double a_duration = ((double)AV_TIME_BASE / av_q2d(r_sample_rate));
+    double a_time_base = (av_q2d(a_in_stream_->time_base) * AV_TIME_BASE);
+    int64_t a_duration_64 = (int64_t)(a_duration / a_time_base);
+#endif
+
+    if (!v_enc_entered_.load()) {
+        v_stopflag_.store(false);
+        v_enc_thread_ = std::thread(std::bind(&CameraRecoder::video_enc_loop, this));
+    }
+
+    if (!a_enc_entered_.load()) {
+        a_stopflag_.store(false);
+        a_enc_thread_ = std::thread(std::bind(&CameraRecoder::audio_enc_loop, this));
+    }
+
+    int ch;
+    do {
+        ch = _getch();
+    } while (ch != (int)'e');
+
+    console.info("Waiting the thread(s) exit.");
+
+    // 通知视频线程退出
+    {
+        std::lock_guard<std::mutex> lock(v_mutex_);
+        v_stopflag_.store(true);  // 设置退出标志
+    }
+
+    // 通知音频线程退出
+    {
+        std::lock_guard<std::mutex> lock(a_mutex_);
+        a_stopflag_.store(true);  // 设置退出标志
+    }
+
+    if (v_enc_thread_.joinable()) {
+        v_enc_thread_.join();
+        console.info("The video encoder thread exit.");
+    }
+
+    if (a_enc_thread_.joinable()) {
+        a_enc_thread_.join();
+        console.info("The audio encoder thread exit.");
+    }
 
     // 写入文件尾
-    ret = av_write_trailer(av_ofmt_ctx_);
-
+    {
+        std::unique_lock<std::mutex> lock(w_mutex_);
+        ret = av_write_trailer(av_ofmt_ctx_);
+    }
     return ret;
 }
 
 int CameraRecoder::stop()
 {
+    if (v_enc_entered_.load()) {
+        {
+            std::lock_guard<std::mutex> lock(v_mutex_);
+            v_stopflag_.store(false);
+        }
+        v_enc_thread_.join();
+        v_enc_entered_ = false;
+    }
+
+    if (a_enc_entered_.load()) {
+        {
+            std::lock_guard<std::mutex> lock(a_mutex_);
+            a_stopflag_.store(false);
+        }
+        a_enc_thread_.join();
+        a_enc_entered_ = false;
+    }
     return 0;
 }

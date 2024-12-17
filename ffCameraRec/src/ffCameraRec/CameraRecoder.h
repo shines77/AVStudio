@@ -2,6 +2,10 @@
 
 #include <stdint.h>
 #include <string>
+#include <atomic>
+#include <mutex>
+#include <condition_variable>
+#include <thread>
 
 #include "av_time_stamp.h"
 
@@ -28,7 +32,6 @@ public:
     void cleanup();
 
     int init(const std::string & output_file);
-    int create_encoders();
     int start();
     int stop();
 
@@ -46,7 +49,14 @@ protected:
                                    AVStream * a_out_stream,
                                    AVFrame * src_frame, size_t & frame_index);
 
+    void video_enc_loop();
+    void audio_enc_loop();
+
+    int create_encoders();
+
 protected:
+    std::atomic<bool> v_stopflag_;
+
     // Input
     AVInputFormat * av_input_fmt_;
 
@@ -75,6 +85,8 @@ protected:
     AVCodecContext * v_ocodec_ctx_;
     AVCodecContext * a_ocodec_ctx_;
 
+    std::mutex  v_mutex_;
+
     // Output file
     AVFormatContext * av_ofmt_ctx_;
 
@@ -86,6 +98,8 @@ protected:
     int v_stream_index_;
     int a_stream_index_;
 
+    std::mutex w_mutex_;
+
     av_time_stamp vi_time_stamp_;
     av_time_stamp ai_time_stamp_;
 
@@ -94,7 +108,20 @@ protected:
 
     std::string output_file_;
 
+    std::atomic<bool> v_enc_entered_;
+    std::atomic<bool> a_enc_entered_;
+
+    std::atomic<bool> a_stopflag_;
+
+    std::condition_variable v_cond_var_;
+    std::condition_variable a_cond_var_;
+
+    std::thread v_enc_thread_;
+    std::thread a_enc_thread_;
+
     // From DShowDevice
     std::string videoDeviceName_;
     std::string audioDeviceName_;
+
+    std::mutex  a_mutex_;
 };
