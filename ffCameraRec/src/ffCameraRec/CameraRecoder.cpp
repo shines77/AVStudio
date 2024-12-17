@@ -263,7 +263,7 @@ int CameraRecoder::init(const std::string & output_file)
 
     // 设置 dshow 的参数
     av_dict_set(&input_video_options, "video_size", "640x480", 0);      // 设置图像大小
-    av_dict_set(&input_video_options, "video_buffer_size", "512", 0);   // 设置缓冲区大小, 单位是 Kb?
+    av_dict_set(&input_video_options, "video_buffer_size", "50", 0);    // 设置缓冲区大小, 单位是 毫秒? Kb? 
     av_dict_set(&input_video_options, "framerate", "30", 0);            // 帧率: 30
     //av_dict_set(&input_video_options, "pixel_format", "yuyv422", 0);    // 设置像素格式为 yuyv422    
 
@@ -338,7 +338,7 @@ int CameraRecoder::init(const std::string & output_file)
 
     // 设置 dshow 的参数
     av_dict_set(&input_audio_options, "sample_rate", "44100", 0);       // 设置采样率为 44100 Hz
-    av_dict_set(&input_audio_options, "audio_buffer_size", "32", 0);    // 设置缓冲区大小, 单位是 Kb?
+    av_dict_set(&input_audio_options, "audio_buffer_size", "25", 0);    // 设置缓冲区大小, 单位是 毫秒? Kb?
     av_dict_set(&input_audio_options, "max_delay", "1000000", 0);       // FFmpeg默认是 0.7s
     //av_dict_set(&input_audio_options, "channels", "2", 0);              // 设置双声道
 
@@ -518,8 +518,8 @@ int CameraRecoder::create_encoders()
     v_ocodec_ctx_->framerate = v_in_stream_->r_frame_rate;
     v_ocodec_ctx_->time_base = av_inv_q(v_in_stream_->r_frame_rate);
     //v_ocodec_ctx_->time_base = v_in_stream_->time_base;
-    v_ocodec_ctx_->qmin = 20;
-    v_ocodec_ctx_->qmin = 25;
+    v_ocodec_ctx_->qmin = 23;
+    v_ocodec_ctx_->qmax = 25;
     v_ocodec_ctx_->gop_size = 30 * 3;
     v_ocodec_ctx_->max_b_frames = 0;
     v_ocodec_ctx_->pix_fmt = AV_PIX_FMT_YUV420P;
@@ -537,7 +537,7 @@ int CameraRecoder::create_encoders()
         // 0 latency
         ret = av_opt_set(v_ocodec_ctx_->priv_data, "tune", "zerolatency", 0);
         // Q 值的范围通常为 0-51，0 表示无损压缩，51 表示最低质量
-        ret = av_opt_set(v_ocodec_ctx_->priv_data, "crf", "20", 0);
+        ret = av_opt_set(v_ocodec_ctx_->priv_data, "crf", "23", 0);
     }
 
     // 打开输出视频编码器 context
@@ -600,7 +600,7 @@ int CameraRecoder::create_encoders()
     v_out_stream_->id    = v_ocodec_ctx_->codec_id;
     v_out_stream_->codecpar->codec_tag = 0;
 
-    v_out_stream_->codec->qmin = 20;
+    v_out_stream_->codec->qmin = 23;
     v_out_stream_->codec->qmax = 25;
 
     v_out_stream_->r_frame_rate = v_ocodec_ctx_->framerate;
@@ -986,12 +986,14 @@ void CameraRecoder::video_enc_loop()
     size_t v_frame_index = 0;
     size_t v_oframe_index = 0;
     AVRational time_base_q = { 1, AV_TIME_BASE };
+    static const int64_t kRemainTime = 200;
     bool is_exit = false;
 
     AVRational frame_rate = v_ocodec_ctx_->framerate;
     // = AV_TIME_BASE / (num / den) = AV_TIME_BASE * den / num;
     double frame_duration = (double)AV_TIME_BASE * frame_rate.den / frame_rate.num;
     int64_t frame_duration_us = (int64_t)frame_duration;
+    int64_t start_time = av_gettime_relative();
 
     v_enc_entered_.store(true);
     console.info("video_enc_loop() enter");
@@ -1062,16 +1064,21 @@ void CameraRecoder::video_enc_loop()
                                 //console.debug("v_frame_index = %d", v_frame_index + 1);
                                 sw_global.stop();
                                 int64_t time_us = sw_global.elapsed_time_stamp();
-                                if ((time_us + 200) < frame_duration_us) {
-                                    int64_t sleep_us = frame_duration_us - (time_us + 200);
+                                sw_global.print_elapsed_time_ms("Video processing");
+
+                                int64_t elapsed_time = av_gettime_relative() - start_time;
+                                int64_t frame_pts = (int64_t)(frame_duration * v_frame_index);
+                                if ((elapsed_time + kRemainTime) < frame_pts) {
+                                    int64_t sleep_us = frame_pts - (elapsed_time + kRemainTime);
                                     av_usleep((unsigned)sleep_us);
                                     console.info("Video sleep_us: %d", (int)sleep_us);
                                 }
-                                sw_global.print_elapsed_time_ms("Video processing");
+#if 0
                                 if (v_frame_index > 200) {
                                     is_exit = true;
                                     break;
                                 }
+#endif
                             }
                             else {
                                 assert(ret2 == AVERROR(EAGAIN));
@@ -1116,6 +1123,7 @@ void CameraRecoder::audio_enc_loop()
     size_t a_oframe_index = 0;
     size_t a_raw_frame_index = 0;
     AVRational time_base_q = { 1, AV_TIME_BASE };
+    static const int64_t kRemainTime = 200;
     bool is_exit = false;
 
     AVRational r_sample_rate = { a_ocodec_ctx_->sample_rate, 1 };
@@ -1123,6 +1131,7 @@ void CameraRecoder::audio_enc_loop()
     double sample_time = (double)AV_TIME_BASE * r_sample_rate.den / r_sample_rate.num;
     double frame_duration = sample_time * a_ocodec_ctx_->frame_size;
     int64_t frame_duration_us = (int64_t)frame_duration;
+    int64_t start_time = av_gettime_relative();
 
     a_enc_entered_.store(true);
     console.info("audio_enc_loop() enter");
@@ -1195,16 +1204,21 @@ void CameraRecoder::audio_enc_loop()
                                 //console.debug("a_frame_index = %d", a_frame_index + 1);
                                 sw_global.stop();
                                 int64_t time_us = sw_global.elapsed_time_stamp();
-                                if ((time_us + 200) < frame_duration_us) {
-                                    int64_t sleep_us = frame_duration_us - (time_us + 200);
+                                sw_global.print_elapsed_time_ms("Audio processing");
+
+                                int64_t elapsed_time = av_gettime_relative() - start_time;
+                                int64_t frame_pts = (int64_t)(frame_duration * a_frame_index);
+                                if ((elapsed_time + kRemainTime) < frame_pts) {
+                                    int64_t sleep_us = frame_pts - (elapsed_time + kRemainTime);
                                     av_usleep((unsigned)sleep_us);
                                     console.info("Audio sleep_us: %d", (int)sleep_us);
                                 }
-                                sw_global.print_elapsed_time_ms("Audio processing");
+#if 0
                                 if (a_frame_index > 400) {
                                     is_exit = true;
                                     break;
                                 }
+#endif
                             }
                             else {
                                 assert(ret2 == AVERROR(EAGAIN));
