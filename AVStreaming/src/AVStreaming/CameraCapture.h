@@ -153,9 +153,6 @@ public:
     void ResizeVideoWindow(HWND hwndPreview = NULL);
     bool AttachToVideoWindow(HWND hwndPreview);
 
-    int ffmpeg_test();
-    int merge_video();
-
     int ListVideoConfigures();
     int ListAudioConfigures();
 
@@ -193,21 +190,6 @@ public:
 protected:
     void InitInterfaces();
     void ReleaseInterfaces();
-
-    int avcodec_encode_video_frame(AVFormatContext * outputFormatCtx,
-                                   AVCodecContext * videoCodecCtx,
-                                   AVStream * inputVideoStream,
-                                   AVStream * outputVideoStream,
-                                   AVFrame * srcFrame, int frameIndex,
-                                   AVPixelFormat src_format,
-                                   AVPixelFormat dest_format);
-    int avcodec_encode_audio_frame(AVFormatContext * outputFormatCtx,
-                                   AVCodecContext * audioCodecCtx,
-                                   AVStream * inputAudioStream,
-                                   AVStream * outputAudioStream,
-                                   AVFrame * srcFrame, int frameIndex,
-                                   AVSampleFormat src_format,
-                                   AVSampleFormat dest_format);
 
 private:
     HWND                    hwndPreview_;           // Ô¤ÀÀ´°¿Ú¾ä±ú

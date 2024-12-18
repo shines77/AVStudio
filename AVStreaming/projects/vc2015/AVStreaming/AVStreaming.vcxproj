@@ -239,12 +239,18 @@
     <ClInclude Include="..\..\..\src\AVStreaming\AVStreaming.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\AVStreamingDlg.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\CameraHostDlg.h" />
+    <ClInclude Include="..\..\..\src\AVStreaming\CmdParser.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\fAllocator.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\fSmartPtr.h" />
+    <ClInclude Include="..\..\..\src\AVStreaming\global.h" />
+    <ClInclude Include="..\..\..\src\AVStreaming\macros.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\Mtype.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\PreviewWnd.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\Resource.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\stdafx.h" />
+    <ClInclude Include="..\..\..\src\AVStreaming\StopWatch.h" />
+    <ClInclude Include="..\..\..\src\AVStreaming\string_utils.h" />
+    <ClInclude Include="..\..\..\src\AVStreaming\string_utils_cxx.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\targetver.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\CameraCapture.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\utils.h" />
@@ -253,6 +259,7 @@
     <ClCompile Include="..\..\..\src\AVStreaming\AVStreaming.cpp" />
     <ClCompile Include="..\..\..\src\AVStreaming\AVStreamingDlg.cpp" />
     <ClCompile Include="..\..\..\src\AVStreaming\CameraHostDlg.cpp" />
+    <ClCompile Include="..\..\..\src\AVStreaming\global.cpp" />
     <ClCompile Include="..\..\..\src\AVStreaming\Mtype.cpp" />
     <ClCompile Include="..\..\..\src\AVStreaming\PreviewWnd.cpp" />
     <ClCompile Include="..\..\..\src\AVStreaming\stdafx.cpp">

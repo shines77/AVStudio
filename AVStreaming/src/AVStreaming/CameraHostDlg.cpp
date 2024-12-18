@@ -6,8 +6,10 @@
 #include "AVStreaming.h"
 #include "CameraHostDlg.h"
 
+#include "macros.h"
 #include "CameraCapture.h"
 #include "utils.h"
+#include "string_utils.h"
 
 // CCameraHostDlg ¶Ô»°¿ò
 
@@ -121,7 +123,7 @@ int CCameraHostDlg::EnumAudioDeviceList()
         if (nDeviceCount > 0) {
             for (int i = 0; i < nDeviceCount; i++) {
                 const std::string & deviceName = pCameraCapture_->audioDeviceList_[i];
-                std::tstring deviceNameW = Ansi2Unicode(deviceName);             
+                std::tstring deviceNameW = string_utils::ansi_to_unicode_t(deviceName);             
                 cbxAudioDeviceList_.AddString(deviceNameW.c_str());
             }
             cbxAudioDeviceList_.SetCurSel(0);
@@ -139,7 +141,7 @@ int CCameraHostDlg::EnumVideoDeviceList()
         if (nDeviceCount > 0) {
             for (int i = 0; i < nDeviceCount; i++) {
                 const std::string & deviceName = pCameraCapture_->videoDeviceList_[i];
-                std::tstring deviceNameW = Ansi2Unicode(deviceName);              
+                std::tstring deviceNameW = string_utils::ansi_to_unicode_t(deviceName);              
                 cbxVideoDeviceList_.AddString(deviceNameW.c_str());
             }
             cbxVideoDeviceList_.SetCurSel(0);
@@ -162,7 +164,7 @@ std::string CCameraHostDlg::GetSelectedVideoDevice() const
     cbxVideoDeviceList_.GetWindowText(name);
     std::tstring deviceNameW = name.GetBuffer();
     if (!deviceNameW.empty()) {
-        deviceName = Unicode2Ansi(deviceNameW);
+        deviceName = string_utils::unicode_to_ansi_t(deviceNameW);
     }
     return deviceName;
 }
@@ -181,7 +183,7 @@ std::string CCameraHostDlg::GetSelectedAudioDevice() const
     cbxAudioDeviceList_.GetWindowText(name);
     std::tstring deviceNameW = name.GetBuffer();
     if (!deviceNameW.empty()) {
-        deviceName = Unicode2Ansi(deviceNameW);
+        deviceName = string_utils::unicode_to_ansi_t(deviceNameW);
     }    
     return deviceName;
 }
@@ -193,9 +195,6 @@ bool CCameraHostDlg::StartCapture()
     }
 
     if (pCameraCapture_ != NULL) {
-        //pCameraCapture_->ffmpeg_test();
-        pCameraCapture_->merge_video();
-
         CCameraCapture::PLAY_STATE playState = pCameraCapture_->GetPlayState();
         if (playState == CCameraCapture::PLAY_STATE::Paused) {
             pCameraCapture_->ChangePreviewState(CCameraCapture::PLAY_STATE::Running);

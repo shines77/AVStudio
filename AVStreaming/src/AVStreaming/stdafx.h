@@ -40,23 +40,3 @@
 #pragma comment(linker,"/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 #endif
 #endif
-
-#ifndef SAFE_COM_RELEASE
-#define SAFE_COM_RELEASE(pInterface) \
-    do {                            \
-        if (pInterface != NULL) {   \
-            pInterface->Release();  \
-            pInterface = NULL;      \
-        }                           \
-    } while (0)
-#endif // SAFE_COM_RELEASE
-
-#ifndef SAFE_OBJECT_DELETE
-#define SAFE_OBJECT_DELETE(pObject) \
-    do {                            \
-        if (pObject != NULL) {      \
-            delete pObject;         \
-            pObject = NULL;         \
-        }                           \
-    } while (0)
-#endif // SAFE_OBJECT_DELETE

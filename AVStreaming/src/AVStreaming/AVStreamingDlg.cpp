@@ -6,10 +6,11 @@
 #include "AVStreaming.h"
 #include "AVStreamingDlg.h"
 
+#include "macros.h"
+#include "utils.h"
 #include "PreviewWnd.h"
 #include "CameraHostDlg.h"
 #include "CameraCapture.h"
-#include "utils.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
