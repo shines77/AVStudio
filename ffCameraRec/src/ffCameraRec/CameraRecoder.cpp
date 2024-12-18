@@ -262,8 +262,9 @@ int CameraRecoder::init(const std::string & output_file)
     AVDictionary * input_video_options = NULL;
 
     // 设置 dshow 的参数
+    //ret = av_dict_set(&input_video_options, "rtbufsize", "2048", 0);
     ret = av_dict_set(&input_video_options, "video_size", "640x480", 0);      // 设置图像大小
-    ret = av_dict_set(&input_video_options, "video_buffer_size", "1", 0);    // 设置缓冲区大小, 单位是 毫秒? Kb? 
+    ret = av_dict_set(&input_video_options, "video_buffer_size", "50", 0);    // 设置缓冲区大小, 单位是 毫秒? Kb? 
     ret = av_dict_set(&input_video_options, "framerate", "30", 0);            // 帧率: 30
     //ret = av_dict_set(&input_video_options, "pixel_format", "yuyv422", 0);    // 设置像素格式为 yuyv422    
 
@@ -337,10 +338,14 @@ int CameraRecoder::init(const std::string & output_file)
     AVDictionary * input_audio_options = NULL;
 
     // 设置 dshow 的参数
-    ret = av_dict_set(&input_audio_options, "sample_rate", "44100", 0);       // 设置采样率为 44100 Hz
-    ret = av_dict_set(&input_audio_options, "audio_buffer_size", "24", 0);    // 设置缓冲区大小, 单位是 毫秒? Kb?
-    //ret = av_dict_set(&input_audio_options, "max_delay", "1000000", 0);       // FFmpeg默认是 0.7s
-    //ret = av_dict_set(&input_audio_options, "channels", "2", 0);              // 设置双声道
+    //ret = av_dict_set(&input_audio_options, "bitrate", "128000", 0);
+    //ret = av_dict_set(&input_audio_options, "rtbufsize", "2048", 0);
+    //ret = av_dict_set(&input_audio_options, "start_time_realtime", "0", 0);
+    ret = av_dict_set(&input_audio_options, "sample_rate", "44100", 0);     // 设置采样率为 44100 Hz
+    ret = av_dict_set(&input_audio_options, "audio_buffer_size", "24", 0);  // 设置缓冲区大小, 单位是 毫秒?
+    //ret = av_dict_set(&input_audio_options, "audio_latency", "24ms", 0);    // 设置延迟, 单位是 毫秒?
+    //ret = av_dict_set(&input_audio_options, "max_delay", "1000000", 0);     // FFmpeg默认是 0.7s
+    //ret = av_dict_set(&input_audio_options, "channels", "2", 0);            // 设置双声道
 
     // 打开音频设备
     assert(a_ifmt_ctx_ == nullptr);
@@ -361,6 +366,9 @@ int CameraRecoder::init(const std::string & output_file)
         return ret;
     }
 #endif
+
+    // 设置 FFmpeg 内部缓冲区为最小值
+    //a_ifmt_ctx_->flags |= AVFMT_FLAG_NOBUFFER;
 
     // 查找音频流
     int a_stream_index = -1;
@@ -1251,7 +1259,7 @@ void CameraRecoder::audio_enc_loop()
                                     av_usleep((unsigned)sleep_us);
                                 }
                                 else {
-                                    //console.info("Audio sleep_us: %d", (int)sleep_us);
+                                    console.info("Audio sleep_us: %d", (int)sleep_us);
                                 }
 #endif
                             }
