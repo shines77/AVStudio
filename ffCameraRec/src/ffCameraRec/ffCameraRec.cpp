@@ -44,7 +44,7 @@ void console_test()
     }
 
     av::StdFileLog file_log("test.log", false);
-    file_log.set_log_level(av::LogLevel::Error);
+    file_log.set_log_level(av::LogLevel::Info);
 
     file_log.println("Hello world!");
     file_log.fatal("This a fatal message.");
@@ -77,8 +77,8 @@ int main(int argc, const char * argv[])
     avdevice_register_all();
     avformat_network_init();
 
-    av_log_set_level(AV_LOG_QUIET);
-    console.set_log_level(av::LogLevel::Error);
+    av_log_set_level(AV_LOG_INFO);
+    console.set_log_level(av::LogLevel::Info);
 
     int ret;
 

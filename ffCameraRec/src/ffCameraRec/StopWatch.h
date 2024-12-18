@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <xatomic.h>        // For _Compiler_barrier()
 #include <cstdio>
 #include <string>
 
@@ -20,15 +21,18 @@ public:
     }
 
     void reset() {
+        _Compiler_barrier();
         start_time_ = 0;
         end_time_ = 0;
     }
 
     void start() {
         start_time_ = av_gettime_relative();
+        _Compiler_barrier();
     }
 
     void stop() {
+        _Compiler_barrier();
         end_time_ = av_gettime_relative();
     }
 

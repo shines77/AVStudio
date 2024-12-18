@@ -15,3 +15,6 @@ bool av_q2d_gt(AVRational a, AVRational b);
 
 bool av_q2d_lte(AVRational a, AVRational b);
 bool av_q2d_gte(AVRational a, AVRational b);
+
+AVRational av_rescale_time_base(const AVRational & time_base);
+AVRational av_fixed_time_base(const AVRational & time_base);
