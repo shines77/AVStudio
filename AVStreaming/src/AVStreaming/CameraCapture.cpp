@@ -61,52 +61,6 @@ void CCameraCapture::InitInterfaces()
     pVideoMediaEvent_ = NULL;
 }
 
-HRESULT CCameraCapture::CreateInterfaces()
-{
-    HRESULT hr;
-
-    // 创建 filter graph manager
-    SAFE_COM_RELEASE(pFilterGraph_);
-    hr = CoCreateInstance(CLSID_FilterGraph, NULL, CLSCTX_INPROC_SERVER, IID_IGraphBuilder, (void**)&pFilterGraph_);
-	if (FAILED(hr))
-		return hr;
-
-    // 创建 capture graph manager
-    SAFE_COM_RELEASE(pCaptureBuilder_);
-    hr = CoCreateInstance(CLSID_CaptureGraphBuilder2, NULL, CLSCTX_INPROC_SERVER,
-                          IID_ICaptureGraphBuilder2, (void**)&pCaptureBuilder_);
-	if (FAILED(hr))
-		return hr;
-
-    // 创建视频播放窗口
-    SAFE_COM_RELEASE(pVideoWindow_);
-    hr = pFilterGraph_->QueryInterface(IID_IVideoWindow, (void **)&pVideoWindow_);
-	if (FAILED(hr))
-		return hr;
-
-    playState_ = PLAY_STATE::Unknown;
-
-    // 创建摄像头流媒体的控制开关
-    SAFE_COM_RELEASE(pVideoMediaControl_);
-    hr = pFilterGraph_->QueryInterface(IID_IMediaControl, (void **)&pVideoMediaControl_);
-	if (FAILED(hr))
-		return hr;
-
-    // 创建摄像头流媒体的控制事件
-    SAFE_COM_RELEASE(pVideoMediaEvent_);
-    hr = pFilterGraph_->QueryInterface(IID_IMediaEventEx, (void **)&pVideoMediaEvent_);
-	if (FAILED(hr))
-		return hr;
-
-    // 为 capture graph 指定要使用的 filter graph
-    if (pCaptureBuilder_ != NULL && pFilterGraph_ != NULL) {
-        hr = pCaptureBuilder_->SetFiltergraph(pFilterGraph_);
-	    if (FAILED(hr))
-		    return hr;
-    }
-    return hr;
-}
-
 void CCameraCapture::ReleaseInterfaces()
 {
     SAFE_COM_RELEASE(pVideoMux_);
@@ -117,6 +71,52 @@ void CCameraCapture::ReleaseInterfaces()
     SAFE_COM_RELEASE(pAudioFilter_);
     SAFE_COM_RELEASE(pCaptureBuilder_);
     SAFE_COM_RELEASE(pFilterGraph_);
+}
+
+HRESULT CCameraCapture::CreateInterfaces()
+{
+    HRESULT hr;
+
+    // 创建 filter graph manager
+    SAFE_COM_RELEASE(pFilterGraph_);
+    hr = CoCreateInstance(CLSID_FilterGraph, NULL, CLSCTX_INPROC_SERVER, IID_IGraphBuilder, (void**)&pFilterGraph_);
+    if (FAILED(hr))
+        return hr;
+
+    // 创建 capture graph manager
+    SAFE_COM_RELEASE(pCaptureBuilder_);
+    hr = CoCreateInstance(CLSID_CaptureGraphBuilder2, NULL, CLSCTX_INPROC_SERVER,
+                          IID_ICaptureGraphBuilder2, (void**)&pCaptureBuilder_);
+    if (FAILED(hr))
+        return hr;
+
+    // 创建视频播放窗口
+    SAFE_COM_RELEASE(pVideoWindow_);
+    hr = pFilterGraph_->QueryInterface(IID_IVideoWindow, (void **)&pVideoWindow_);
+    if (FAILED(hr))
+        return hr;
+
+    playState_ = PLAY_STATE::Unknown;
+
+    // 创建摄像头流媒体的控制开关
+    SAFE_COM_RELEASE(pVideoMediaControl_);
+    hr = pFilterGraph_->QueryInterface(IID_IMediaControl, (void **)&pVideoMediaControl_);
+    if (FAILED(hr))
+        return hr;
+
+    // 创建摄像头流媒体的控制事件
+    SAFE_COM_RELEASE(pVideoMediaEvent_);
+    hr = pFilterGraph_->QueryInterface(IID_IMediaEventEx, (void **)&pVideoMediaEvent_);
+    if (FAILED(hr))
+        return hr;
+
+    // 为 capture graph 指定要使用的 filter graph
+    if (pCaptureBuilder_ != NULL && pFilterGraph_ != NULL) {
+        hr = pCaptureBuilder_->SetFiltergraph(pFilterGraph_);
+        if (FAILED(hr))
+            return hr;
+    }
+    return hr;
 }
 
 HRESULT CCameraCapture::StopAndReleaseInterfaces()
@@ -220,25 +220,25 @@ void CCameraCapture::ResizeVideoWindow(HWND hwndPreview /* = NULL */)
 int CCameraCapture::ListVideoConfigures()
 {
     int nConfigCount = 0;
-	if (pCaptureBuilder_ != NULL && pVideoFilter_ != NULL) {
-		videoConfigures_.clear();
-		IAMStreamConfig * pStreamConfig = NULL;
-		// &MEDIATYPE_Video, 如果包括其他媒体类型, 第二个参数设置为 NULL, 表示 Any media type.
-		HRESULT hr = pCaptureBuilder_->FindInterface(&PIN_CATEGORY_CAPTURE, &MEDIATYPE_Video,
-										             pVideoFilter_, IID_IAMStreamConfig, (void **)&pStreamConfig);
+    if (pCaptureBuilder_ != NULL && pVideoFilter_ != NULL) {
+        videoConfigures_.clear();
+        IAMStreamConfig * pStreamConfig = NULL;
+        // &MEDIATYPE_Video, 如果包括其他媒体类型, 第二个参数设置为 NULL, 表示 Any media type.
+        HRESULT hr = pCaptureBuilder_->FindInterface(&PIN_CATEGORY_CAPTURE, &MEDIATYPE_Video,
+                                                     pVideoFilter_, IID_IAMStreamConfig, (void **)&pStreamConfig);
         if (FAILED(hr)) {
             return -1;
         }
 
-		int nCount = 0, nSize = 0;
-		hr = pStreamConfig->GetNumberOfCapabilities(&nCount, &nSize);
+        int nCount = 0, nSize = 0;
+        hr = pStreamConfig->GetNumberOfCapabilities(&nCount, &nSize);
         if (FAILED(hr)) {
             SAFE_COM_RELEASE(pStreamConfig);
             return -1;
         }
 
-		// Check the size to make sure we pass in the correct structure.
-		if (nSize == sizeof(VIDEO_STREAM_CONFIG_CAPS)) {
+        // Check the size to make sure we pass in the correct structure.
+        if (nSize == sizeof(VIDEO_STREAM_CONFIG_CAPS)) {
             // Use the video capabilities structure.
             for (int nIndex = 0; nIndex < nCount; nIndex++) {
                 VIDEO_STREAM_CONFIG_CAPS vscc;
@@ -271,25 +271,25 @@ int CCameraCapture::ListVideoConfigures()
 int CCameraCapture::ListAudioConfigures()
 {
     int nConfigCount = 0;
-	if (pCaptureBuilder_ != NULL && pAudioFilter_ != NULL) {
-		audioConfigures_.clear();
-		IAMStreamConfig * pStreamConfig = NULL;
-		// &MEDIATYPE_Video, 如果包括其他媒体类型, 第二个参数设置为 NULL, 表示 Any media type.
-		HRESULT hr = pCaptureBuilder_->FindInterface(&PIN_CATEGORY_CAPTURE, &MEDIATYPE_Audio,
-										             pAudioFilter_, IID_IAMStreamConfig, (void **)&pStreamConfig);
+    if (pCaptureBuilder_ != NULL && pAudioFilter_ != NULL) {
+        audioConfigures_.clear();
+        IAMStreamConfig * pStreamConfig = NULL;
+        // &MEDIATYPE_Video, 如果包括其他媒体类型, 第二个参数设置为 NULL, 表示 Any media type.
+        HRESULT hr = pCaptureBuilder_->FindInterface(&PIN_CATEGORY_CAPTURE, &MEDIATYPE_Audio,
+                                                     pAudioFilter_, IID_IAMStreamConfig, (void **)&pStreamConfig);
         if (FAILED(hr)) {
             return -1;
         }
 
-		int nCount = 0, nSize = 0;
-		hr = pStreamConfig->GetNumberOfCapabilities(&nCount, &nSize);
+        int nCount = 0, nSize = 0;
+        hr = pStreamConfig->GetNumberOfCapabilities(&nCount, &nSize);
         if (FAILED(hr)) {
             SAFE_COM_RELEASE(pStreamConfig);
             return -1;
         }
 
-		// Check the size to make sure we pass in the correct structure.
-		if (nSize == sizeof(AUDIO_STREAM_CONFIG_CAPS)) {
+        // Check the size to make sure we pass in the correct structure.
+        if (nSize == sizeof(AUDIO_STREAM_CONFIG_CAPS)) {
             // Use the audio capabilities structure.
             for (int nIndex = 0; nIndex < nCount; nIndex++) {
                 AUDIO_STREAM_CONFIG_CAPS ascc;
@@ -770,7 +770,7 @@ bool CCameraCapture::Render(int mode, TCHAR * videoPath,
 HRESULT CCameraCapture::HandleGraphEvent(void)
 {
     LONG evCode = -1;
-	LONG_PTR evParam1 = NULL, evParam2 = NULL;
+    LONG_PTR evParam1 = NULL, evParam2 = NULL;
     HRESULT hr = S_OK;
 
     if (pVideoMediaEvent_ == NULL)
@@ -1358,7 +1358,7 @@ int CCameraCapture::ffmpeg_test()
     }
 
     // 创建输出格式上下文
-    fSmartPtr<AVFormatContext, 1> outputFormatCtx = NULL;
+    fSmartPtr<AVFormatContext, SMT_Output> outputFormatCtx = NULL;
     result = avformat_alloc_output_context2(&outputFormatCtx, NULL, "mp4", OUTPUT_FILENAME);
     if (result < 0) {
         debug_print("无法创建输出格式context\n");
@@ -1395,7 +1395,7 @@ int CCameraCapture::ffmpeg_test()
     if (outputVideoCodecCtx->codec_id == AV_CODEC_ID_H264) {
         result = av_opt_set(outputVideoCodecCtx->priv_data, "profile", "main", 0);
         // 0 latency
-        //result = av_opt_set(outputVideoCodecCtx->priv_data, "tune", "zerolatency",0);
+        result = av_opt_set(outputVideoCodecCtx->priv_data, "tune", "zerolatency", 0);
     }
 
     result = avcodec_open2(outputVideoCodecCtx.ptr(), outputVideoCodec, NULL);

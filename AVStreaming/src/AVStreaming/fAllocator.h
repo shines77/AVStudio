@@ -11,10 +11,24 @@ extern "C" {
 #include <libavutil/log.h>
 }
 
+enum SmartPtr_Type {
+    SMT_Input,
+    SMT_Output,
+    SMT_Decoder,
+    SMT_Encoder,
+    SMT_Muxer,
+    SMT_Demuxer,
+    SMT_Filter,
+    SMT_BSFS,
+    SMT_Video,
+    SMT_Audio,
+    SMT_Last
+};
+
 /* AVFormatContext (0) */
 
 template <>
-struct fAllocator<AVFormatContext, 0>
+struct fAllocator<AVFormatContext, SMT_Input>
 {
     inline void _free(AVFormatContext * ptr) {
         if (ptr) {
@@ -26,7 +40,7 @@ struct fAllocator<AVFormatContext, 0>
 /* AVFormatContext: (1) */
 
 template <>
-struct fAllocator<AVFormatContext, 1>
+struct fAllocator<AVFormatContext, SMT_Output>
 {
     inline void _free(AVFormatContext * ptr) {
         if (ptr) {
@@ -67,6 +81,18 @@ struct fAllocator<AVPacket>
     inline void _free(AVPacket * ptr) {
         if (ptr) {
             av_packet_unref(ptr);
+        }
+    }
+};
+
+/* AVDictionary */
+
+template <>
+struct fAllocator<AVDictionary>
+{
+    inline void _free(AVDictionary * ptr) {
+        if (ptr) {
+            av_dict_free(&ptr);
         }
     }
 };
