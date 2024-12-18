@@ -186,7 +186,7 @@ public:
     }
 
     bool can_write(int level) const {
-        return (level != LogLevel::Trace) ? (level >= level_) : true;
+        return (level != LogLevel::Trace) ? (level <= level_) : true;
     }
 
     bool try_fatal() {
