@@ -30,9 +30,9 @@ BOOL CPreviewWnd::Create(LPCTSTR lpszWindowName, DWORD dwStyle, const RECT & rec
                     AfxRegisterWndClass(CS_DBLCLKS | CS_VREDRAW | CS_HREDRAW),  // 窗口类名
                     lpszWindowName,             // 窗口标题
                     dwStyle,                    // 窗口样式
-                    rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, // 窗口位置和大小
-                    pParentWnd->GetSafeHwnd(),  // 父窗口句柄
-                    (HMENU)nID,                 // 控件ID
+                    rect,                       // 窗口位置和大小
+                    pParentWnd,                 // 父窗口
+                    nID,                        // 控件ID
                     NULL);                      // 创建参数
 }
 

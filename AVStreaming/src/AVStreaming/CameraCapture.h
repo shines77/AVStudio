@@ -1,6 +1,13 @@
 #pragma once
 
-#include <DShow.h>
+#include <dshow.h>
+
+#define __IDxtCompositor_INTERFACE_DEFINED__
+#define __IDxtAlphaSetter_INTERFACE_DEFINED__
+#define __IDxtJpeg_INTERFACE_DEFINED__
+#define __IDxtKey_INTERFACE_DEFINED__
+
+#include <qedit.h>      // For ISampleGrabber
 #include <tchar.h>
 
 #include <string>
@@ -203,4 +210,6 @@ private:
     IVideoWindow *          pVideoWindow_;          // 视频播放窗口
     IMediaControl *         pVideoMediaControl_;    // 摄像头流媒体的控制开关（控制其开始、暂停、结束）
     IMediaEventEx *         pVideoMediaEvent_;      // 摄像头流媒体的控制事件
+    ISampleGrabber *        pVideoGrabber_;         // 视频抓取回调
+    ISampleGrabber *        pAudioGrabber_;         // 音频抓取回调
 };

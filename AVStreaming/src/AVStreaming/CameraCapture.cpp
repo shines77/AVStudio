@@ -543,9 +543,9 @@ bool CCameraCapture::CreateVideoFilter(const char * videoDevice)
         if (SUCCEEDED(hr)) {
             VARIANT var;
             var.vt = VT_BSTR;
-            hr = pPropBag->Read(L"Description", &var, NULL);
+            hr = pPropBag->Read(L"FriendlyName", &var, NULL);
             if (hr != NOERROR) {
-                hr = pPropBag->Read(L"FriendlyName", &var, NULL);
+                hr = pPropBag->Read(L"Description", &var, NULL);
             }
             if (hr == NOERROR) {
                 char deviceName[256] = { '\0' };
@@ -624,9 +624,9 @@ bool CCameraCapture::CreateAudioFilter(const char * audioDevice)
         if (SUCCEEDED(hr)) {
             VARIANT var;
             var.vt = VT_BSTR;
-            hr = pPropBag->Read(L"Description", &var, NULL);
+            hr = pPropBag->Read(L"FriendlyName", &var, NULL);
             if (hr != NOERROR) {
-                hr = pPropBag->Read(L"FriendlyName", &var, NULL);
+                hr = pPropBag->Read(L"Description", &var, NULL);
             }
             if (hr == NOERROR) {
                 char deviceName[256] = { '\0' };
