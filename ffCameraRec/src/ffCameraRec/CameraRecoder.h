@@ -36,18 +36,21 @@ public:
     int stop();
 
 protected:
-    int avcodec_encode_video_frame(AVFormatContext * av_ofmt_ctx,
-                                   AVCodecContext * v_icodec_ctx,
-                                   AVCodecContext * v_ocodec_ctx,
-                                   AVStream * v_in_stream,
-                                   AVStream * v_out_stream,
-                                   AVFrame * src_frame, size_t & frame_index);
-    int avcodec_encode_audio_frame(AVFormatContext * av_ofmt_ctx,
-                                   AVCodecContext * a_icodec_ctx,
-                                   AVCodecContext * a_ocodec_ctx,
-                                   AVStream * a_in_stream,
-                                   AVStream * a_out_stream,
-                                   AVFrame * src_frame, size_t & frame_index);
+    int encode_video_frame(AVFormatContext * av_ofmt_ctx,
+                           AVCodecContext * v_icodec_ctx,
+                           AVCodecContext * v_ocodec_ctx,
+                           AVStream * v_in_stream,
+                           AVStream * v_out_stream,
+                           AVFrame * src_frame, size_t & frame_index);
+    int encode_audio_frame(AVFormatContext * av_ofmt_ctx,
+                           AVCodecContext * a_icodec_ctx,
+                           AVCodecContext * a_ocodec_ctx,
+                           AVStream * a_in_stream,
+                           AVStream * a_out_stream,
+                           AVFrame * src_frame, size_t & frame_index);
+
+    int flush_video_encoder(size_t & frame_index);
+    int flush_audio_encoder(size_t & frame_index);
 
     void video_enc_loop();
     void audio_enc_loop();

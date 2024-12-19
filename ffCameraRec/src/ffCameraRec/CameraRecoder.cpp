@@ -278,18 +278,15 @@ int CameraRecoder::init(const std::string & output_file)
         console.error("Could not open input video device: %d", ret);
         return ret;
     }
-    // v_start_time_ = av_gettime_relative();
     console.info("Selected video device: %s", videoDeviceName_.c_str());
 
     av_dict_free(&input_video_options);
 
-#if 1
     ret = avformat_find_stream_info(v_ifmt_ctx_, NULL);
     if (ret < 0) {
         console.error("Could not open input video stream: %d", ret);
         return ret;
     }
-#endif
 
     // 查找视频流
     int v_stream_index = -1;
@@ -351,7 +348,7 @@ int CameraRecoder::init(const std::string & output_file)
     //ret = av_dict_set(&input_audio_options, "channels", "2", 0);            // 设置双声道
 
     // 设置 FFmpeg 内部缓冲区为最小值 (不能设置, 设置了程序不能正常读取音频)
-    // a_ifmt_ctx_->flags |= AVFMT_FLAG_NOBUFFER;
+    // a_ifmt_ctx_->flags |= AVFMT_FLAG_NOBUFFER;    
 
     // 打开音频设备
     assert(a_ifmt_ctx_ == nullptr);
@@ -364,13 +361,11 @@ int CameraRecoder::init(const std::string & output_file)
 
     av_dict_free(&input_audio_options);
 
-#if 1
     ret = avformat_find_stream_info(a_ifmt_ctx_, NULL);
     if (ret < 0) {
         console.error("Could not open input audio stream: %d", ret);
         return ret;
     }
-#endif
 
     // 查找音频流
     int a_stream_index = -1;
@@ -539,10 +534,14 @@ int CameraRecoder::create_encoders()
         v_ocodec_ctx_->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     }
 
+    // 推流时, 低延迟设置
+    v_ocodec_ctx_->flags |= AV_CODEC_FLAG_LOW_DELAY;
+
     //
     // See: https://blog.csdn.net/weixin_50873490/article/details/141899535
     //
     if (v_ocodec_ctx_->codec_id == AV_CODEC_ID_H264) {
+        // profile: superfast 是最快的, 但是质量最低
         ret = av_opt_set(v_ocodec_ctx_->priv_data, "profile", "main", 0);
         // 0 latency
         ret = av_opt_set(v_ocodec_ctx_->priv_data, "tune", "zerolatency", 0);
@@ -585,6 +584,9 @@ int CameraRecoder::create_encoders()
     if (av_ofmt_ctx_->oformat->flags & AVFMT_GLOBALHEADER) {
         a_ocodec_ctx_->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     }
+
+    // 推流时, 低延迟设置
+    a_ocodec_ctx_->flags |= AV_CODEC_FLAG_LOW_DELAY;
 
     // 打开输出音频编码器 context
     ret = avcodec_open2(a_ocodec_ctx_, a_output_codec_, NULL);
@@ -677,70 +679,71 @@ int transform_video_format(AVFrame * src_frame, AVPixelFormat src_format,
     return ret;
 }
 
-int CameraRecoder::avcodec_encode_video_frame(AVFormatContext * av_ofmt_ctx,
-                                              AVCodecContext * v_icodec_ctx,
-                                              AVCodecContext * v_ocodec_ctx,
-                                              AVStream * v_in_stream,
-                                              AVStream * v_out_stream,
-                                              AVFrame * src_frame, size_t & frame_index)
+int CameraRecoder::encode_video_frame(AVFormatContext * av_ofmt_ctx,
+                                      AVCodecContext * v_icodec_ctx,
+                                      AVCodecContext * v_ocodec_ctx,
+                                      AVStream * v_in_stream,
+                                      AVStream * v_out_stream,
+                                      AVFrame * src_frame, size_t & frame_index)
 {
     int ret;
     // 创建一个 YUV420P 格式的 AVFrame
-    fSmartPtr<AVFrame> dest_frame = av_frame_alloc();
-    if (dest_frame == NULL) {
-        console.error("Failed to create destination video framen");
-        return AVERROR(ENOMEM);
-    }
+    fSmartPtr<AVFrame> dest_frame = nullptr;
 
-    AVPixelFormat src_format = v_icodec_ctx->pix_fmt;
-    AVPixelFormat dest_format = v_ocodec_ctx->pix_fmt;
+    if (src_frame != nullptr) {
+        dest_frame = av_frame_alloc();
+        if (dest_frame == NULL) {
+            console.error("Failed to create destination video framen");
+            return AVERROR(ENOMEM);
+        }
 
-    ret = av_frame_copy_props(dest_frame, src_frame);
+        AVPixelFormat src_format = v_icodec_ctx->pix_fmt;
+        AVPixelFormat dest_format = v_ocodec_ctx->pix_fmt;
 
-    dest_frame->width  = src_frame->width;
-    dest_frame->height = src_frame->height;
-    //dest_frame->pkt_duration = src_frame->pkt_duration;
-    //dest_frame->pkt_size = src_frame->pkt_size;
-    dest_frame->format = (int)dest_format;
-    dest_frame->pict_type = AV_PICTURE_TYPE_NONE;
+        ret = av_frame_copy_props(dest_frame, src_frame);
 
-    if (!av_q2d_eq(v_icodec_ctx->time_base, v_ocodec_ctx->time_base)) {
-        av_frame_rescale_ts(dest_frame, v_icodec_ctx->time_base, v_ocodec_ctx->time_base);
-    }
+        dest_frame->width = src_frame->width;
+        dest_frame->height = src_frame->height;
+        dest_frame->format = (int)dest_format;
+        dest_frame->pict_type = AV_PICTURE_TYPE_NONE;
 
-    // 为 YUV420P 格式的 Frame 分配内存
-    ret = av_frame_get_buffer(dest_frame, 32);
-    if (ret < 0) {
-        console.error("Could not allocate destination video frame data: %d", ret);
-        return ret;
-    }
+        if (!av_q2d_eq(v_icodec_ctx->time_base, v_ocodec_ctx->time_base)) {
+            av_frame_rescale_ts(dest_frame, v_icodec_ctx->time_base, v_ocodec_ctx->time_base);
+        }
 
-    ret = av_frame_make_writable(dest_frame);
-    assert(ret == 0);
+        // 为 YUV420P 格式的 Frame 分配内存
+        ret = av_frame_get_buffer(dest_frame, 32);
+        if (ret < 0) {
+            console.error("Could not allocate destination video frame data: %d", ret);
+            return ret;
+        }
 
-    if (sws_video_ == nullptr) {
-        sws_video_ = new sws_video();
-        ret = sws_video_->init(src_frame, src_format, dest_frame, dest_format);
+        ret = av_frame_make_writable(dest_frame);
+        assert(ret == 0);
+
+        if (sws_video_ == nullptr) {
+            sws_video_ = new sws_video();
+            ret = sws_video_->init(src_frame, src_format, dest_frame, dest_format);
+            if (ret < 0) {
+                console.error("Failed to convert YUV422P to YUV420P: %d", ret);
+                return ret;
+            }
+        }
+
+        // 调用转换函数
+#if 1
+        if (sws_video_ != nullptr) {
+            ret = sws_video_->convert(src_frame, src_format, dest_frame, dest_format);
+        } else {
+            return AVERROR(ENOMEM);
+        }
+#else
+        ret = transform_video_format(src_frame, src_format, dest_frame, dest_format);
+#endif
         if (ret < 0) {
             console.error("Failed to convert YUV422P to YUV420P: %d", ret);
             return ret;
         }
-    }
-
-    // 调用转换函数
-#if 1
-    if (sws_video_ != nullptr) {
-        ret = sws_video_->convert(src_frame, src_format, dest_frame, dest_format);
-    }
-    else {
-        return AVERROR(ENOMEM);
-    }
-#else
-    ret = transform_video_format(src_frame, src_format, dest_frame, dest_format);
-#endif
-    if (ret < 0) {
-        console.error("Failed to convert YUV422P to YUV420P: %d", ret);
-        return ret;
     }
 
     // 输出视频编码
@@ -886,71 +889,72 @@ int transform_audio_format(AVFrame * src_frame, AVSampleFormat src_format,
     return ret;
 }
 
-int CameraRecoder::avcodec_encode_audio_frame(AVFormatContext * av_ofmt_ctx,
-                                              AVCodecContext * a_icodec_ctx,
-                                              AVCodecContext * a_ocodec_ctx,
-                                              AVStream * a_in_stream,
-                                              AVStream * a_out_stream,
-                                              AVFrame * src_frame, size_t & frame_index)
+int CameraRecoder::encode_audio_frame(AVFormatContext * av_ofmt_ctx,
+                                      AVCodecContext * a_icodec_ctx,
+                                      AVCodecContext * a_ocodec_ctx,
+                                      AVStream * a_in_stream,
+                                      AVStream * a_out_stream,
+                                      AVFrame * src_frame, size_t & frame_index)
 {
     int ret;
     // 创建一个 AAC 格式的 Frame
-    fSmartPtr<AVFrame> dest_frame = av_frame_alloc();
-    if (dest_frame == NULL) {
-        console.error("Failed to create destination audio frame");
-        return AVERROR(ENOMEM);
-    }
+    fSmartPtr<AVFrame> dest_frame = nullptr;
+        
+    if (src_frame != nullptr) {
+        dest_frame = av_frame_alloc();
+        if (dest_frame == NULL) {
+            console.error("Failed to create destination audio frame");
+            return AVERROR(ENOMEM);
+        }
 
-    AVSampleFormat src_format = a_icodec_ctx->sample_fmt;
-    AVSampleFormat dest_format = a_ocodec_ctx->sample_fmt;
+        AVSampleFormat src_format = a_icodec_ctx->sample_fmt;
+        AVSampleFormat dest_format = a_ocodec_ctx->sample_fmt;
 
-    ret = av_frame_copy_props(dest_frame, src_frame);
+        ret = av_frame_copy_props(dest_frame, src_frame);
 
-    dest_frame->channels  = a_ocodec_ctx->channels;
-    dest_frame->sample_rate = a_ocodec_ctx->sample_rate;
-    dest_frame->channel_layout = a_ocodec_ctx->channel_layout;
-    dest_frame->nb_samples = a_ocodec_ctx->frame_size;
-    //dest_frame->pkt_duration = src_frame->pkt_duration;
-    //dest_frame->pkt_size = a_ocodec_ctx->frame_size;
-    dest_frame->format = (int)dest_format;
+        dest_frame->channels = a_ocodec_ctx->channels;
+        dest_frame->sample_rate = a_ocodec_ctx->sample_rate;
+        dest_frame->channel_layout = a_ocodec_ctx->channel_layout;
+        dest_frame->nb_samples = a_ocodec_ctx->frame_size;
+        dest_frame->format = (int)dest_format;
 
-    if (!av_q2d_eq(a_icodec_ctx->time_base, a_ocodec_ctx->time_base)) {
-        av_frame_rescale_ts(dest_frame, a_icodec_ctx->time_base, a_ocodec_ctx->time_base);
-    }
+        if (!av_q2d_eq(a_icodec_ctx->time_base, a_ocodec_ctx->time_base)) {
+            av_frame_rescale_ts(dest_frame, a_icodec_ctx->time_base, a_ocodec_ctx->time_base);
+        }
 
-    // 为 AAC 格式的 Frame 分配内存
-    ret = av_frame_get_buffer(dest_frame, 32);
-    if (ret < 0) {
-        console.error("Could not allocate destination audio frame data: %d", ret);
-        return ret;
-    }
+        // 为 AAC 格式的 Frame 分配内存
+        ret = av_frame_get_buffer(dest_frame, 32);
+        if (ret < 0) {
+            console.error("Could not allocate destination audio frame data: %d", ret);
+            return ret;
+        }
 
-    ret = av_frame_make_writable(dest_frame);
-    assert(ret == 0);
+        ret = av_frame_make_writable(dest_frame);
+        assert(ret == 0);
 
-    if (swr_audio_ == nullptr) {
-        swr_audio_ = new swr_audio();
-        ret = swr_audio_->init(src_frame, src_format, dest_frame, dest_format);
+        if (swr_audio_ == nullptr) {
+            swr_audio_ = new swr_audio();
+            ret = swr_audio_->init(src_frame, src_format, dest_frame, dest_format);
+            if (ret < 0) {
+                console.error("Failed to convert PCM_S16LE to AAC: %d", ret);
+                return ret;
+            }
+        }
+
+        // 调用转换函数
+#if 1
+        if (swr_audio_ != nullptr) {
+            ret = swr_audio_->convert(src_frame, src_format, dest_frame, dest_format);
+        } else {
+            return AVERROR(ENOMEM);
+        }
+#else
+        ret = transform_audio_format(src_frame, src_format, dest_frame, dest_format);
+#endif
         if (ret < 0) {
             console.error("Failed to convert PCM_S16LE to AAC: %d", ret);
             return ret;
         }
-    }
-
-    // 调用转换函数
-#if 1
-    if (swr_audio_ != nullptr) {
-        ret = swr_audio_->convert(src_frame, src_format, dest_frame, dest_format);
-    }
-    else {
-        return AVERROR(ENOMEM);
-    }
-#else
-    ret = transform_audio_format(src_frame, src_format, dest_frame, dest_format);
-#endif
-    if (ret < 0) {
-        console.error("Failed to convert PCM_S16LE to AAC: %d", ret);
-        return ret;
     }
 
     // 输出音频编码
@@ -1011,6 +1015,58 @@ int CameraRecoder::avcodec_encode_audio_frame(AVFormatContext * av_ofmt_ctx,
             break;
         }
     } while (0);
+    return ret;
+}
+
+int CameraRecoder::flush_video_encoder(size_t & frame_index)
+{
+    int ret;
+    if (!(v_output_codec_->capabilities & AV_CODEC_CAP_DELAY)) {
+        // Don't need delay
+        return 0;
+    }
+
+    while (1) {
+        ret = encode_video_frame(av_ofmt_ctx_, v_icodec_ctx_, v_ocodec_ctx_,
+                                         v_in_stream_, v_out_stream_,
+                                         NULL, frame_index);
+        if (ret == AVERROR_EOF) {
+            break;
+        }
+        else if (ret == AVERROR(EAGAIN)) {
+            break;
+        }
+        else if (ret < 0) {
+            console.error("Failed to call flush_video_encoder(): %d ", ret);
+            break;
+        }
+    };
+    return ret;
+}
+
+int CameraRecoder::flush_audio_encoder(size_t & frame_index)
+{
+    int ret;
+    if (!(a_output_codec_->capabilities & AV_CODEC_CAP_DELAY)) {
+        // Don't need delay
+        return 0;
+    }
+
+    while (1) {
+        ret = encode_audio_frame(av_ofmt_ctx_, a_icodec_ctx_, a_ocodec_ctx_,
+                                         a_in_stream_, a_out_stream_,
+                                         NULL, frame_index);
+        if (ret == AVERROR_EOF) {
+            break;
+        }
+        else if (ret == AVERROR(EAGAIN)) {
+            break;
+        }
+        else if (ret < 0) {
+            console.error("Failed to call flush_audio_encoder(): %d ", ret);
+            break;
+        }
+    };
     return ret;
 }
 
@@ -1105,7 +1161,7 @@ void CameraRecoder::video_enc_loop()
                         // Get the stream of the input codec context
 
                         // 将解码后的视频帧转换为输出视频的格式, 并保存
-                        ret2 = avcodec_encode_video_frame(av_ofmt_ctx_, v_icodec_ctx_, v_ocodec_ctx_,
+                        ret2 = encode_video_frame(av_ofmt_ctx_, v_icodec_ctx_, v_ocodec_ctx_,
                                                           v_in_stream_, v_out_stream_,
                                                           frame, v_frame_index);
                         if (ret2 < 0 && ret2 != AVERROR(EAGAIN)) {
@@ -1158,6 +1214,9 @@ void CameraRecoder::video_enc_loop()
         if (is_exit)
             break;
     }
+
+    ret = flush_video_encoder(v_frame_index);
+
     console.info("video_enc_loop() exit");
     v_enc_entered_.store(false);
 }
@@ -1237,7 +1296,7 @@ void CameraRecoder::audio_enc_loop()
                         ret = av_frame_make_writable(frame);
                         //sw_global.print_elapsed_time_ms("Audio processing");
                         // 将编码后的音频帧转换为输出音频的格式, 并保存
-                        ret2 = avcodec_encode_audio_frame(av_ofmt_ctx_, a_icodec_ctx_, a_ocodec_ctx_,
+                        ret2 = encode_audio_frame(av_ofmt_ctx_, a_icodec_ctx_, a_ocodec_ctx_,
                                                           a_in_stream_, a_out_stream_,
                                                           frame, a_frame_index);
                         if (ret2 < 0 && ret2 != AVERROR(EAGAIN)) {
@@ -1295,6 +1354,9 @@ void CameraRecoder::audio_enc_loop()
         if (is_exit)
             break;
     }
+
+    ret = flush_audio_encoder(a_frame_index);
+
     console.info("audio_enc_loop() exit");
     a_enc_entered_.store(false);
 }
@@ -1357,22 +1419,22 @@ int CameraRecoder::start()
 
     timestamp_reset();
 
-    if (!v_enc_entered_.load()) {
-        v_stopflag_.store(false);
-        v_enc_thread_ = std::thread(std::bind(&CameraRecoder::video_enc_loop, this));
-    }
-
     if (!a_enc_entered_.load()) {
         a_stopflag_.store(false);
         a_enc_thread_ = std::thread(std::bind(&CameraRecoder::audio_enc_loop, this));
     }
 
+    if (!v_enc_entered_.load()) {
+        v_stopflag_.store(false);
+        v_enc_thread_ = std::thread(std::bind(&CameraRecoder::video_enc_loop, this));
+    }
+
     int ch;
     do {
         ch = _getch();
-    } while (ch != (int)'e');
+    } while (ch != (int)'q');
 
-    console.info("Waiting the thread(s) exit.");
+    console.info("Waiting the video thread exit.");
 
     // 通知视频线程退出
     {
@@ -1380,20 +1442,22 @@ int CameraRecoder::start()
         v_stopflag_.store(true);  // 设置退出标志
     }
 
+    console.info("Waiting the video/audio thread(s) exit.");
+
     // 通知音频线程退出
     {
         std::lock_guard<std::mutex> lock(a_mutex_);
         a_stopflag_.store(true);  // 设置退出标志
     }
 
-    if (v_enc_thread_.joinable()) {
-        v_enc_thread_.join();
-        console.info("The video encoder thread exit.");
-    }
-
     if (a_enc_thread_.joinable()) {
         a_enc_thread_.join();
         console.info("The audio encoder thread exit.");
+    }
+
+    if (v_enc_thread_.joinable()) {
+        v_enc_thread_.join();
+        console.info("The video encoder thread exit.");
     }
 
     // 写入文件尾
