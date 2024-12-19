@@ -92,8 +92,10 @@ int main(int argc, const char * argv[])
     avformat_network_deinit();
 
 #if defined(_WIN32) || defined(_WIN64)
-    //console.println("");
-    //::system("pause");
+#ifndef NDEBUG
+    console.println("");
+    ::system("pause");
+#endif
 #endif
     return 0;
 }
