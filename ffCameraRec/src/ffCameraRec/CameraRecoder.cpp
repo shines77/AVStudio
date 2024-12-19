@@ -93,14 +93,16 @@ void CameraRecoder::release()
 
 void CameraRecoder::cleanup()
 {
-    if (a_ocodec_ctx_) {
-        avcodec_free_context(&a_ocodec_ctx_);
-        a_ocodec_ctx_ = nullptr;
+    if (swr_audio_) {
+        swr_audio_->cleanup();
+        delete swr_audio_;
+        swr_audio_ = nullptr;
     }
 
-    if (v_ocodec_ctx_) {
-        avcodec_free_context(&v_ocodec_ctx_);
-        v_ocodec_ctx_ = nullptr;
+    if (sws_video_) {
+        sws_video_->cleanup();
+        delete sws_video_;
+        sws_video_ = nullptr;
     }
 
     if (a_icodec_ctx_) {
@@ -121,6 +123,16 @@ void CameraRecoder::cleanup()
     if (v_ifmt_ctx_) {
         avformat_close_input(&v_ifmt_ctx_);
         v_ifmt_ctx_ = nullptr;
+    }
+
+    if (a_ocodec_ctx_) {
+        avcodec_free_context(&a_ocodec_ctx_);
+        a_ocodec_ctx_ = nullptr;
+    }
+
+    if (v_ocodec_ctx_) {
+        avcodec_free_context(&v_ocodec_ctx_);
+        v_ocodec_ctx_ = nullptr;
     }
 
     if (av_ofmt_ctx_) {
@@ -171,18 +183,6 @@ void CameraRecoder::cleanup()
 
     v_stopflag_ = true;
     a_stopflag_ = true;
-
-    if (sws_video_) {
-        sws_video_->cleanup();
-        delete sws_video_;
-        sws_video_ = nullptr;
-    }
-
-    if (swr_audio_) {
-        swr_audio_->cleanup();
-        delete swr_audio_;
-        swr_audio_ = nullptr;
-    }
 
     inited_ = false;
 }
@@ -266,7 +266,10 @@ int CameraRecoder::init(const std::string & output_file)
     ret = av_dict_set(&input_video_options, "video_size", "640x480", 0);      // 设置图像大小
     ret = av_dict_set(&input_video_options, "video_buffer_size", "50", 0);    // 设置缓冲区大小, 单位是 毫秒? Kb? 
     ret = av_dict_set(&input_video_options, "framerate", "30", 0);            // 帧率: 30
-    //ret = av_dict_set(&input_video_options, "pixel_format", "yuyv422", 0);    // 设置像素格式为 yuyv422    
+    //ret = av_dict_set(&input_video_options, "pixel_format", "yuyv422", 0);    // 设置像素格式为 yuyv422
+
+    // 当视频设备被移除后, 读取数据不阻塞 (不能设置, 设置了程序不能正常运行)
+    // v_ifmt_ctx_->flags |= AVFMT_FLAG_NONBLOCK; 
 
     // 打开视频设备
     assert(v_ifmt_ctx_ == nullptr);
@@ -347,6 +350,9 @@ int CameraRecoder::init(const std::string & output_file)
     //ret = av_dict_set(&input_audio_options, "max_delay", "1000000", 0);     // FFmpeg默认是 0.7s
     //ret = av_dict_set(&input_audio_options, "channels", "2", 0);            // 设置双声道
 
+    // 设置 FFmpeg 内部缓冲区为最小值 (不能设置, 设置了程序不能正常读取音频)
+    // a_ifmt_ctx_->flags |= AVFMT_FLAG_NOBUFFER;
+
     // 打开音频设备
     assert(a_ifmt_ctx_ == nullptr);
     ret = avformat_open_input(&a_ifmt_ctx_, audio_url, av_input_fmt_, &input_audio_options);
@@ -354,7 +360,6 @@ int CameraRecoder::init(const std::string & output_file)
         console.error("Could not open input audio device: %d", ret);
         return ret;
     }
-    // a_start_time_ = av_gettime_relative();
     console.info("Selected audio device: %s", audioDeviceName_.c_str());
 
     av_dict_free(&input_audio_options);
@@ -366,9 +371,6 @@ int CameraRecoder::init(const std::string & output_file)
         return ret;
     }
 #endif
-
-    // 设置 FFmpeg 内部缓冲区为最小值
-    //a_ifmt_ctx_->flags |= AVFMT_FLAG_NOBUFFER;
 
     // 查找音频流
     int a_stream_index = -1;
@@ -1074,7 +1076,7 @@ void CameraRecoder::video_enc_loop()
                     int64_t sleep_us = frame_pts - (elapsed_time + kRemainTime);
                     sleep_us = (sleep_us < (frame_duration_us - kRemainTime)) ? sleep_us : (frame_duration_us - kRemainTime);
                     if (sleep_us > 0) {
-                        console.info("** Video sleep_us: %d", (int)(sleep_us / 2));
+                        console.info("* Video sleep_us: %d", (int)(sleep_us / 2));
                         av_usleep((unsigned)sleep_us / 2);
                     }
                     else {
@@ -1191,9 +1193,9 @@ void CameraRecoder::audio_enc_loop()
         // Audio
         do {
             fSmartPtr<AVPacket> packet = av_packet_alloc();
-            //sw_global.start();
+            sw_global.start();
             ret = av_read_frame(a_ifmt_ctx_, packet);
-            //sw_global.print_elapsed_time_ms("Audio processing");
+            sw_global.print_elapsed_time_ms("Audio processing");
             if (ret < 0) {
                 is_exit = true;
                 break;
@@ -1249,7 +1251,7 @@ void CameraRecoder::audio_enc_loop()
                                 //sw_global.stop();
                                 //int64_t time_us = sw_global.elapsed_time_stamp();
                                 //sw_global.print_elapsed_time_ms("Audio processing");
-#if 0
+#if 1
                                 int64_t elapsed_time = av_gettime_relative() - start_time;
                                 int64_t frame_pts = (int64_t)(frame_duration * a_frame_index);
                                 int64_t sleep_us = frame_pts - (elapsed_time + kRemainTime);
