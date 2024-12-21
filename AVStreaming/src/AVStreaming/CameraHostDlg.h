@@ -9,9 +9,11 @@
 
 #include <string>
 
+#include "string_utils.h"
+
 // CCameraHostDlg ¶Ô»°¿ò
 
-class CCameraCapture;
+class CameraCapture;
 
 class CCameraHostDlg : public CDialogEx
 {
@@ -31,13 +33,13 @@ public:
     HWND GetPreviewHwnd() const;
     HWND SetPreviewHwnd(HWND hwndPreview, bool bAttachTo = false);
 
-    CCameraCapture * GetSafeCapture() const;
+    CameraCapture * GetSafeCapture() const;
 
     bool StartCapture();
     bool StopCapture();
 
-    std::string GetSelectedVideoDevice() const;
-    std::string GetSelectedAudioDevice() const;
+    std::tstring GetSelectedVideoDevice() const;
+    std::tstring GetSelectedAudioDevice() const;
 
 protected:
     virtual BOOL OnInitDialog();
@@ -56,14 +58,14 @@ protected:
     int EnumAudioDeviceList();
 
 private:
-    HWND             hwndPreview_;
-    CCameraCapture * pCameraCapture_;
+    HWND            hwndPreview_;
+    CameraCapture * pCameraCapture_;
 
-    bool        inited_;
-    std::string selectedVideoDevice_;
-    std::string selectedAudioDevice_;
+    bool            inited_;
+    std::tstring    selectedVideoDevice_;
+    std::tstring    selectedAudioDevice_;
 
-    CComboBox   cbxVideoDeviceList_;
-    CComboBox   cbxAudioDeviceList_;       
-    CButton     cbxSaveToAviFile_;
+    CComboBox       cbxVideoDeviceList_;
+    CComboBox       cbxAudioDeviceList_;       
+    CButton         cbxSaveToAviFile_;
 };

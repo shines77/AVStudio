@@ -152,6 +152,17 @@ public:
         return str_ansi;
     }
 
+    static int unicode_to_tchar(TCHAR * dest, size_t size, const wchar_t * src)
+    {
+#ifdef _UNICODE
+        errno_t err = ::wcscpy_s(dest, size - 1, src);
+        return (int)err;
+#else
+        int out_len = ::WideCharToMultiByte(CP_ACP, 0, src, -1, dest, size, "", NULL);
+        return out_len;
+#endif
+    }
+
 private:
     string_utils() {}
     ~string_utils() {}

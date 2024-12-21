@@ -47,7 +47,7 @@ BEGIN_MESSAGE_MAP(CCameraHostDlg, CDialogEx)
     ON_BN_CLICKED(IDC_BTN_STOP_CAPTURE, &CCameraHostDlg::OnClickedBtnStopCapture)
 END_MESSAGE_MAP()
 
-CCameraCapture * CCameraHostDlg::GetSafeCapture() const {
+CameraCapture * CCameraHostDlg::GetSafeCapture() const {
     if (pCameraCapture_ != NULL && pCameraCapture_->GetPreviewHwnd() != NULL)
         return pCameraCapture_;
     else
@@ -75,7 +75,7 @@ HWND CCameraHostDlg::SetPreviewHwnd(HWND hwndPreview, bool bAttachTo /* = false 
 BOOL CCameraHostDlg::Create(UINT nIDTemplate, HWND previewHwnd, CWnd * pParentWnd /*= NULL*/)
 {
 	if (pCameraCapture_ == NULL) {
-        pCameraCapture_ = new CCameraCapture;
+        pCameraCapture_ = new CameraCapture;
         if (pCameraCapture_ != NULL) {
             pCameraCapture_->CreateEnv();
             if (previewHwnd != NULL) {
@@ -122,9 +122,8 @@ int CCameraHostDlg::EnumAudioDeviceList()
         cbxAudioDeviceList_.Clear();
         if (nDeviceCount > 0) {
             for (int i = 0; i < nDeviceCount; i++) {
-                const std::string & deviceName = pCameraCapture_->audioDeviceList_[i];
-                std::tstring deviceNameW = string_utils::ansi_to_unicode_t(deviceName);             
-                cbxAudioDeviceList_.AddString(deviceNameW.c_str());
+                const std::tstring & deviceName = pCameraCapture_->audioDeviceList_[i];           
+                cbxAudioDeviceList_.AddString(deviceName.c_str());
             }
             cbxAudioDeviceList_.SetCurSel(0);
         }
@@ -136,13 +135,12 @@ int CCameraHostDlg::EnumVideoDeviceList()
 {
     int nDeviceCount = 0;
     if (pCameraCapture_ != NULL) {
-        nDeviceCount = pCameraCapture_->ENumVideoDevices();
+        nDeviceCount = pCameraCapture_->EnumVideoDevices();
         cbxVideoDeviceList_.Clear();
         if (nDeviceCount > 0) {
             for (int i = 0; i < nDeviceCount; i++) {
-                const std::string & deviceName = pCameraCapture_->videoDeviceList_[i];
-                std::tstring deviceNameW = string_utils::ansi_to_unicode_t(deviceName);              
-                cbxVideoDeviceList_.AddString(deviceNameW.c_str());
+                const std::tstring & deviceName = pCameraCapture_->videoDeviceList_[i];             
+                cbxVideoDeviceList_.AddString(deviceName.c_str());
             }
             cbxVideoDeviceList_.SetCurSel(0);
         }
@@ -150,9 +148,9 @@ int CCameraHostDlg::EnumVideoDeviceList()
     return nDeviceCount;
 }
 
-std::string CCameraHostDlg::GetSelectedVideoDevice() const
+std::tstring CCameraHostDlg::GetSelectedVideoDevice() const
 {
-    std::string deviceName;
+    std::tstring deviceName;
     if (cbxVideoDeviceList_.GetCount() <= 0)
         return deviceName;
 
@@ -162,16 +160,13 @@ std::string CCameraHostDlg::GetSelectedVideoDevice() const
 
     CString name;
     cbxVideoDeviceList_.GetWindowText(name);
-    std::tstring deviceNameW = name.GetBuffer();
-    if (!deviceNameW.empty()) {
-        deviceName = string_utils::unicode_to_ansi_t(deviceNameW);
-    }
+    deviceName = name.GetBuffer();
     return deviceName;
 }
 
-std::string CCameraHostDlg::GetSelectedAudioDevice() const
+std::tstring CCameraHostDlg::GetSelectedAudioDevice() const
 {
-    std::string deviceName;
+    std::tstring deviceName;
     if (cbxAudioDeviceList_.GetCount() <= 0)
         return deviceName;
 
@@ -181,10 +176,7 @@ std::string CCameraHostDlg::GetSelectedAudioDevice() const
 
     CString name;
     cbxAudioDeviceList_.GetWindowText(name);
-    std::tstring deviceNameW = name.GetBuffer();
-    if (!deviceNameW.empty()) {
-        deviceName = string_utils::unicode_to_ansi_t(deviceNameW);
-    }    
+    deviceName = name.GetBuffer();   
     return deviceName;
 }
 
@@ -195,16 +187,16 @@ bool CCameraHostDlg::StartCapture()
     }
 
     if (pCameraCapture_ != NULL) {
-        CCameraCapture::PLAY_STATE playState = pCameraCapture_->GetPlayState();
-        if (playState == CCameraCapture::PLAY_STATE::Paused) {
-            pCameraCapture_->ChangePreviewState(CCameraCapture::PLAY_STATE::Running);
+        CameraCapture::PLAY_STATE playState = pCameraCapture_->GetPlayState();
+        if (playState == CameraCapture::PLAY_STATE::Paused) {
+            pCameraCapture_->ChangePreviewState(CameraCapture::PLAY_STATE::Running);
         }
-        else if (playState == CCameraCapture::PLAY_STATE::Running) {
-            pCameraCapture_->ChangePreviewState(CCameraCapture::PLAY_STATE::Paused);
+        else if (playState == CameraCapture::PLAY_STATE::Running) {
+            pCameraCapture_->ChangePreviewState(CameraCapture::PLAY_STATE::Paused);
         }
         else {
-            std::string videoDevice = GetSelectedVideoDevice();
-            std::string audioDevice = GetSelectedAudioDevice();
+            std::tstring videoDevice = GetSelectedVideoDevice();
+            std::tstring audioDevice = GetSelectedAudioDevice();
             if (videoDevice != selectedVideoDevice_ && audioDevice != selectedAudioDevice_) {
 #if 1 || defined(_DEBUG)
                 bool result = pCameraCapture_->Render(MODE_PREVIEW_VIDEO, NULL,
@@ -234,12 +226,12 @@ bool CCameraHostDlg::StopCapture()
     }
 
     if (pCameraCapture_ != NULL) {
-        CCameraCapture::PLAY_STATE playState = pCameraCapture_->GetPlayState();
-        if (playState == CCameraCapture::PLAY_STATE::Running) {
-            pCameraCapture_->ChangePreviewState(CCameraCapture::PLAY_STATE::Paused);
+        CameraCapture::PLAY_STATE playState = pCameraCapture_->GetPlayState();
+        if (playState == CameraCapture::PLAY_STATE::Running) {
+            pCameraCapture_->ChangePreviewState(CameraCapture::PLAY_STATE::Paused);
         }
-        else if (playState == CCameraCapture::PLAY_STATE::Paused) {
-            pCameraCapture_->ChangePreviewState(CCameraCapture::PLAY_STATE::Stopped);
+        else if (playState == CameraCapture::PLAY_STATE::Paused) {
+            pCameraCapture_->ChangePreviewState(CameraCapture::PLAY_STATE::Stopped);
         }
     }
     return true;

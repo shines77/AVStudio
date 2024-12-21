@@ -3,7 +3,7 @@
 // CPreviewWnd
 
 class CCameraHostDlg;
-class CCameraCapture;
+class CameraCapture;
 
 class CPreviewWnd : public CWnd
 {
@@ -24,7 +24,7 @@ public:
     }
 
     CCameraHostDlg * GetSafeHostWnd() const;
-    CCameraCapture * GetSafeCapture() const;
+    CameraCapture * GetSafeCapture() const;
 
 protected:
     afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);

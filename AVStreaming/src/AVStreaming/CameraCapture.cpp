@@ -33,46 +33,60 @@ extern "C" {
 // See: https://www.cnblogs.com/linuxAndMcu/p/12068978.html
 //
 
-CCameraCapture::CCameraCapture(HWND hwndPreview /* = NULL */)
+CameraCapture::CameraCapture(HWND hwndPreview /* = NULL */)
 {
     hwndPreview_ = hwndPreview;
 
     InitEnv();
 }
 
-CCameraCapture::~CCameraCapture(void)
+CameraCapture::~CameraCapture(void)
 {
     HRESULT hr = Stop();
     Release();
 }
 
-void CCameraCapture::InitEnv()
+void CameraCapture::InitEnv()
 {
     playState_ = PLAY_STATE::Unknown;
 
     pFilterGraph_ = NULL;
     pCaptureBuilder_ = NULL;
+
     pVideoFilter_ = NULL;
     pAudioFilter_ = NULL;
+
     pVideoMux_ = NULL;
     pVideoWindow_ = NULL;
     pVideoMediaControl_ = NULL;
     pVideoMediaEvent_ = NULL;
+
+    pVideoGrabber_ = NULL;
+    pAudioGrabber_ = NULL;
+
+    pVideoCompression_ = NULL;
+
+    pVideoStreamConfig_ = NULL;
+    pAudioStreamConfig_ = NULL;
+
+    pDroppedFrames_ = NULL;
 }
 
-void CCameraCapture::Release()
+void CameraCapture::Release()
 {
     SAFE_COM_RELEASE(pVideoMux_);
     SAFE_COM_RELEASE(pVideoWindow_);
     SAFE_COM_RELEASE(pVideoMediaControl_);
     SAFE_COM_RELEASE(pVideoMediaEvent_);
+
     SAFE_COM_RELEASE(pVideoFilter_);
     SAFE_COM_RELEASE(pAudioFilter_);
+
     SAFE_COM_RELEASE(pCaptureBuilder_);
     SAFE_COM_RELEASE(pFilterGraph_);
 }
 
-HRESULT CCameraCapture::CreateEnv()
+HRESULT CameraCapture::CreateEnv()
 {
     HRESULT hr;
 
@@ -83,7 +97,7 @@ HRESULT CCameraCapture::CreateEnv()
     if (FAILED(hr))
         return hr;
 
-    // 创建 capture graph manager
+    // 创建 capture graph builder
     SAFE_COM_RELEASE(pCaptureBuilder_);
     hr = CoCreateInstance(CLSID_CaptureGraphBuilder2, NULL, CLSCTX_INPROC_SERVER,
                           IID_ICaptureGraphBuilder2, (void**)&pCaptureBuilder_);
@@ -119,7 +133,7 @@ HRESULT CCameraCapture::CreateEnv()
     return hr;
 }
 
-HRESULT CCameraCapture::Stop()
+HRESULT CameraCapture::Stop()
 {
     HRESULT hr = E_FAIL;
 
@@ -148,7 +162,7 @@ HRESULT CCameraCapture::Stop()
     return hr;
 }
 
-HWND CCameraCapture::SetPreviewHwnd(HWND hwndPreview, bool bAttachTo /* = false */)
+HWND CameraCapture::SetPreviewHwnd(HWND hwndPreview, bool bAttachTo /* = false */)
 {
     HWND oldHwnd = hwndPreview_;
     hwndPreview_ = hwndPreview;
@@ -158,7 +172,7 @@ HWND CCameraCapture::SetPreviewHwnd(HWND hwndPreview, bool bAttachTo /* = false 
     return oldHwnd;
 }
 
-bool CCameraCapture::AttachToVideoWindow(HWND hwndPreview)
+bool CameraCapture::AttachToVideoWindow(HWND hwndPreview)
 {
     // 检查视频播放窗口
     if (pVideoWindow_ == NULL)
@@ -200,7 +214,7 @@ bool CCameraCapture::AttachToVideoWindow(HWND hwndPreview)
     return true;
 }
 
-void CCameraCapture::ResizeVideoWindow(HWND hwndPreview /* = NULL */)
+void CameraCapture::ResizeVideoWindow(HWND hwndPreview /* = NULL */)
 {
     if (hwndPreview == NULL)
         hwndPreview = hwndPreview_;
@@ -215,7 +229,7 @@ void CCameraCapture::ResizeVideoWindow(HWND hwndPreview /* = NULL */)
     }
 }
 
-int CCameraCapture::EnumVideoConfigures()
+int CameraCapture::EnumVideoConfigures()
 {
     int nConfigCount = 0;
     if (pCaptureBuilder_ != NULL && pVideoFilter_ != NULL) {
@@ -266,7 +280,7 @@ int CCameraCapture::EnumVideoConfigures()
     return nConfigCount;
 }
 
-int CCameraCapture::EnumAudioConfigures()
+int CameraCapture::EnumAudioConfigures()
 {
     int nConfigCount = 0;
     if (pCaptureBuilder_ != NULL && pAudioFilter_ != NULL) {
@@ -316,7 +330,7 @@ int CCameraCapture::EnumAudioConfigures()
 }
 
 // 枚举视频采集设备
-int CCameraCapture::ENumVideoDevices()
+int CameraCapture::EnumVideoDevices()
 {
     HRESULT hr;
 
@@ -345,13 +359,15 @@ int CCameraCapture::ENumVideoDevices()
     // 枚举设备
     while (1) {
         hr = pEnumMoniker->Next(1, &pMoniker, &cFetched);
-        if (hr == E_FAIL)
+        if (hr == E_FAIL) {
             break;
+        }
         else if (hr == S_FALSE) {
             console.error(_T("Unable to access video capture device! index = %d"), video_dev_total);
             break;
         }
         else if (hr != S_OK) {
+            console.error(_T("Unable to access video capture device! Error = %d"), (int)hr);
             break;
         }
         // 设备属性信息
@@ -365,10 +381,10 @@ int CCameraCapture::ENumVideoDevices()
                 hr = pPropBag->Read(L"Description", &var, NULL);
             }
             if (hr == NOERROR) {
-                char deviceName[256] = { '\0' };
+                TCHAR deviceName[256] = { '\0' };
                 // 获取设备名称
-                WideCharToMultiByte(CP_ACP, 0, var.bstrVal, -1, deviceName, sizeof(deviceName), "", NULL);
-                SysFreeString(var.bstrVal);
+                int ret = string_utils::unicode_to_tchar(deviceName, sizeof(deviceName), var.bstrVal);
+                ::SysFreeString(var.bstrVal);
                 // 尝试用当前设备绑定到 video filter
                 IBaseFilter * pVideoFilter = NULL;
                 hr = pMoniker->BindToObject(0, 0, IID_IBaseFilter, (void **)&pVideoFilter);
@@ -398,7 +414,7 @@ int CCameraCapture::ENumVideoDevices()
 }
 
 // 枚举音频采集设备
-int CCameraCapture::EnumAudioDevices()
+int CameraCapture::EnumAudioDevices()
 {
     HRESULT hr;
 
@@ -427,13 +443,15 @@ int CCameraCapture::EnumAudioDevices()
     // 枚举设备
     while (1) {
         hr = pEnumMoniker->Next(1, &pMoniker, &cFetched);
-        if (hr == E_FAIL)
+        if (hr == E_FAIL) {
             break;
+        }
         else if (hr == S_FALSE) {
             console.error(_T("Unable to access audio capture device! index = %d"), audio_dev_total);
             break;
         }
         else if (hr != S_OK) {
+            console.error(_T("Unable to access audio capture device! Error = %d"), (int)hr);
             break;
         }
         // 设备属性信息
@@ -447,10 +465,10 @@ int CCameraCapture::EnumAudioDevices()
                 hr = pPropBag->Read(L"Description", &var, NULL);
             }
             if (hr == NOERROR) {
-                char deviceName[256] = { '\0' };
+                TCHAR deviceName[256] = { '\0' };
                 // 获取设备名称
-                WideCharToMultiByte(CP_ACP, 0, var.bstrVal, -1, deviceName, sizeof(deviceName), "", NULL);
-                SysFreeString(var.bstrVal);
+                int ret = string_utils::unicode_to_tchar(deviceName, sizeof(deviceName), var.bstrVal);
+                ::SysFreeString(var.bstrVal);
                 // 尝试用当前设备绑定到 audio filter
                 IBaseFilter * pAudioFilter = NULL;
                 hr = pMoniker->BindToObject(0, 0, IID_IBaseFilter, (void **)&pAudioFilter);
@@ -480,19 +498,19 @@ int CCameraCapture::EnumAudioDevices()
 }
 
 // 枚举视频压缩格式
-int CCameraCapture::EnumVideoCompressFormat()
+int CameraCapture::EnumVideoCompressFormat()
 {
     return 0;
 }
 
 // 枚举音频压缩格式
-int CCameraCapture::EnumAudioCompressFormat()
+int CameraCapture::EnumAudioCompressFormat()
 {
     return 0;
 }
 
 // 根据选择的设备获取 Video Capture Filter
-bool CCameraCapture::CreateVideoFilter(const char * videoDevice)
+bool CameraCapture::CreateVideoFilter(const TCHAR * videoDevice)
 {
     if (videoDevice == NULL)
         return false;
@@ -521,13 +539,15 @@ bool CCameraCapture::CreateVideoFilter(const char * videoDevice)
     // 枚举设备
     while (1) {
         hr = pEnumMoniker->Next(1, &pMoniker, &cFetched);
-        if (hr == E_FAIL)
+        if (hr == E_FAIL) {
             break;
+        }
         else if (hr == S_FALSE) {
             console.error(_T("Unable to access video capture device! index = %d"), nIndex);
             break;
         }
         else if (hr != S_OK) {
+            console.error(_T("Unable to access video capture device! Error = %d"), (int)hr);
             break;
         }
         // 设备属性信息
@@ -541,11 +561,11 @@ bool CCameraCapture::CreateVideoFilter(const char * videoDevice)
                 hr = pPropBag->Read(L"Description", &var, NULL);
             }
             if (hr == NOERROR) {
-                char deviceName[256] = { '\0' };
+                TCHAR deviceName[256] = { '\0' };
                 // 获取设备名称
-                WideCharToMultiByte(CP_ACP, 0, var.bstrVal, -1, deviceName, sizeof(deviceName), "", NULL);
-                SysFreeString(var.bstrVal);
-                if (videoDevice != NULL && strcmp(videoDevice, deviceName) == 0) {
+                int ret = string_utils::unicode_to_tchar(deviceName, sizeof(deviceName), var.bstrVal);
+                ::SysFreeString(var.bstrVal);
+                if (videoDevice != NULL && _tcscmp(videoDevice, deviceName) == 0) {
                     SAFE_COM_RELEASE(pVideoFilter_);
                     // 尝试用当前设备绑定到 video filter
                     hr = pMoniker->BindToObject(0, 0, IID_IBaseFilter, (void **)&pVideoFilter_);
@@ -570,7 +590,7 @@ bool CCameraCapture::CreateVideoFilter(const char * videoDevice)
 }
 
 // 根据选择的设备获取 Audio Capture Filter
-bool CCameraCapture::CreateAudioFilter(const char * audioDevice)
+bool CameraCapture::CreateAudioFilter(const TCHAR * audioDevice)
 {
     if (audioDevice == NULL)
         return false;
@@ -599,13 +619,15 @@ bool CCameraCapture::CreateAudioFilter(const char * audioDevice)
     // 枚举设备
     while (1) {
         hr = pEnumMoniker->Next(1, &pMoniker, &cFetched);
-        if (hr == E_FAIL)
+        if (hr == E_FAIL) {
             break;
+        }
         else if (hr == S_FALSE) {
-            console.error(_T("Unable to access audio capture device! index = %d\n"), nIndex);
+            console.error(_T("Unable to access audio capture device! index = %d"), nIndex);
             break;
         }
         else if (hr != S_OK) {
+            console.error(_T("Unable to access audio capture device! Error = %d"), (int)hr);
             break;
         }
         // 设备属性信息
@@ -619,11 +641,11 @@ bool CCameraCapture::CreateAudioFilter(const char * audioDevice)
                 hr = pPropBag->Read(L"Description", &var, NULL);
             }
             if (hr == NOERROR) {
-                char deviceName[256] = { '\0' };
+                TCHAR deviceName[256] = { '\0' };
                 // 获取设备名称
-                ::WideCharToMultiByte(CP_ACP, 0, var.bstrVal, -1, deviceName, sizeof(deviceName), "", NULL);
-                SysFreeString(var.bstrVal);
-                if (audioDevice != NULL && strcmp(audioDevice, deviceName) == 0) {
+                int ret = string_utils::unicode_to_tchar(deviceName, sizeof(deviceName), var.bstrVal);
+                ::SysFreeString(var.bstrVal);
+                if (audioDevice != NULL && _tcscmp(audioDevice, deviceName) == 0) {
                     SAFE_COM_RELEASE(pAudioFilter_);
                     // 尝试用当前设备绑定到 audio filter
                     hr = pMoniker->BindToObject(0, 0, IID_IBaseFilter, (void **)&pAudioFilter_);
@@ -647,7 +669,7 @@ bool CCameraCapture::CreateAudioFilter(const char * audioDevice)
     return result;
 }
 
-HRESULT CCameraCapture::StartPreview()
+HRESULT CameraCapture::StartPreview()
 {
     HRESULT hr = E_FAIL;
 
@@ -656,7 +678,7 @@ HRESULT CCameraCapture::StartPreview()
     return hr;
 }
 
-HRESULT CCameraCapture::StopPreview()
+HRESULT CameraCapture::StopPreview()
 {
     HRESULT hr = E_FAIL;
 
@@ -665,7 +687,7 @@ HRESULT CCameraCapture::StopPreview()
     return hr;
 }
 
-HRESULT CCameraCapture::StartCapture()
+HRESULT CameraCapture::StartCapture()
 {
     HRESULT hr = E_FAIL;
 
@@ -674,7 +696,7 @@ HRESULT CCameraCapture::StartCapture()
     return hr;
 }
 
-HRESULT CCameraCapture::StopCapture()
+HRESULT CameraCapture::StopCapture()
 {
     HRESULT hr = E_FAIL;
 
@@ -684,9 +706,9 @@ HRESULT CCameraCapture::StopCapture()
 }
 
 // 渲染摄像头预览视频
-bool CCameraCapture::Render(int mode, TCHAR * videoPath,
-                            const char * videoDevice,
-                            const char * audioDevice)
+bool CameraCapture::Render(int mode, TCHAR * videoPath,
+                            const TCHAR * videoDevice,
+                            const TCHAR * audioDevice)
 {
     HRESULT hr;
 
@@ -789,7 +811,7 @@ bool CCameraCapture::Render(int mode, TCHAR * videoPath,
     return true;
 }
 
-HRESULT CCameraCapture::HandleGraphEvent(void)
+HRESULT CameraCapture::HandleGraphEvent(void)
 {
     LONG evCode = -1;
     LONG_PTR evParam1 = NULL, evParam2 = NULL;
@@ -814,7 +836,7 @@ HRESULT CCameraCapture::HandleGraphEvent(void)
     return hr;
 }
 
-HRESULT CCameraCapture::WindowStateChange(BOOL isShow)
+HRESULT CameraCapture::WindowStateChange(BOOL isShow)
 {
     HRESULT hr;
     if (isShow)
@@ -824,7 +846,7 @@ HRESULT CCameraCapture::WindowStateChange(BOOL isShow)
     return hr;
 }
 
-HRESULT CCameraCapture::ChangePreviewState(PLAY_STATE playState /* = PLAY_STATE::Running */)
+HRESULT CameraCapture::ChangePreviewState(PLAY_STATE playState /* = PLAY_STATE::Running */)
 {
     HRESULT hr = E_FAIL;
 
@@ -857,7 +879,7 @@ HRESULT CCameraCapture::ChangePreviewState(PLAY_STATE playState /* = PLAY_STATE:
 }
 
 // 关闭摄像头
-bool CCameraCapture::StopCurrentOperating(int action_type)
+bool CameraCapture::StopCurrentOperating(int action_type)
 {
     if (pVideoMediaControl_ == nullptr)
         return false;
@@ -883,7 +905,7 @@ bool CCameraCapture::StopCurrentOperating(int action_type)
 }
 
 // 暂停播放本地视频
-bool CCameraCapture::PausePlayingLocalVideo()
+bool CameraCapture::PausePlayingLocalVideo()
 {
     if (pVideoMediaControl_ == nullptr)
         return false;
@@ -896,7 +918,7 @@ bool CCameraCapture::PausePlayingLocalVideo()
 }
 
 // 继续播放本地视频
-bool CCameraCapture::ContinuePlayingLocalVideo()
+bool CameraCapture::ContinuePlayingLocalVideo()
 {
     if (pVideoMediaControl_ == nullptr)
         return false;

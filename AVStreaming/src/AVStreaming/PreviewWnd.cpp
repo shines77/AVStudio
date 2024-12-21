@@ -43,7 +43,7 @@ CCameraHostDlg * CPreviewWnd::GetSafeHostWnd() const {
         return NULL;
 }
 
-CCameraCapture * CPreviewWnd::GetSafeCapture() const {
+CameraCapture * CPreviewWnd::GetSafeCapture() const {
     if (pCameraHostDlg_ != NULL && pCameraHostDlg_->GetSafeCapture())
         return pCameraHostDlg_->GetSafeCapture();
     else
@@ -82,7 +82,7 @@ void CPreviewWnd::OnWindowPosChanged(WINDOWPOS* lpwndpos)
 
 LRESULT CPreviewWnd::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
 {
-    CCameraCapture * pCameraCapture = NULL;
+    CameraCapture * pCameraCapture = NULL;
     switch (message)
     {
         case WM_GRAPH_NOTIFY:

@@ -13,6 +13,8 @@
 #include <string>
 #include <vector>
 
+#include "string_utils.h"
+
 #ifdef _DEBUG
 #pragma comment(lib, "strmbased.lib")
 #else
@@ -115,14 +117,14 @@ struct AVStream;
 enum AVPixelFormat;
 enum AVSampleFormat;
 
-class CCameraCapture
+class CameraCapture
 {
 public:
-    CCameraCapture(HWND hwndPreview = NULL);
-    ~CCameraCapture(void);
+    CameraCapture(HWND hwndPreview = NULL);
+    ~CameraCapture(void);
 
-    std::vector<std::string> videoDeviceList_;
-    std::vector<std::string> audioDeviceList_;
+    std::vector<std::tstring>   videoDeviceList_;
+    std::vector<std::tstring>   audioDeviceList_;
 
     std::vector<CamVideoConfig> videoConfigures_;
     std::vector<CamAudioConfig> audioConfigures_;
@@ -165,7 +167,7 @@ public:
     int EnumAudioConfigures();
 
     // 枚举视频采集设备, 返回设备数量
-    int ENumVideoDevices();
+    int EnumVideoDevices();
 
     // 枚举音频采集设备
     int EnumAudioDevices();
@@ -177,9 +179,9 @@ public:
     int EnumAudioCompressFormat();
 
     // 根据选择的设备创建 Video Capture Filter
-    bool CreateVideoFilter(const char * videoDevice = NULL);
+    bool CreateVideoFilter(const TCHAR * videoDevice = NULL);
     // 根据选择的设备创建 Audio Capture Filter
-    bool CreateAudioFilter(const char * audioDevice = NULL);
+    bool CreateAudioFilter(const TCHAR * audioDevice = NULL);
 
     HRESULT StartPreview();
     HRESULT StopPreview();
@@ -189,8 +191,8 @@ public:
 
     // 渲染预览窗口
     bool Render(int mode, TCHAR * videoPath = NULL,
-                const char * videoDevice = NULL,
-                const char * audioDevice = NULL);
+                const TCHAR * videoDevice = NULL,
+                const TCHAR * audioDevice = NULL);
 
     // 停止当前操作
     bool StopCurrentOperating(int _stop_type = 0);
@@ -210,12 +212,22 @@ private:
 
     IGraphBuilder *         pFilterGraph_;          // filter graph (Manager)
     ICaptureGraphBuilder2 * pCaptureBuilder_;       // capture graph (Builder)
+
     IBaseFilter *           pVideoFilter_;          // Video filter
     IBaseFilter *           pAudioFilter_;          // Audio filter
+
     IBaseFilter *           pVideoMux_;             // Video file muxer (用于保存视频文件)
     IVideoWindow *          pVideoWindow_;          // 视频播放窗口
     IMediaControl *         pVideoMediaControl_;    // 摄像头流媒体的控制开关（控制其开始、暂停、结束）
     IMediaEventEx *         pVideoMediaEvent_;      // 摄像头流媒体的控制事件
+
+    IAMVideoCompression *   pVideoCompression_;     // Video 压缩格式
+
+    IAMStreamConfig *       pVideoStreamConfig_;    // for video capture
+    IAMStreamConfig *       pAudioStreamConfig_;    // for audio capture
+
+    IAMDroppedFrames *      pDroppedFrames_;        // Drop info
+
     ISampleGrabber *        pVideoGrabber_;         // 视频抓取回调
     ISampleGrabber *        pAudioGrabber_;         // 音频抓取回调
 };

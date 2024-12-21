@@ -7,6 +7,7 @@
 #include "AVStreamingDlg.h"
 
 #include "macros.h"
+#include "global.h"
 #include "utils.h"
 #include "PreviewWnd.h"
 #include "CameraHostDlg.h"
@@ -160,9 +161,8 @@ BOOL CAVStreamingDlg::OnInitDialog()
             CRect rcClient;
             pPreviewWnd->GetClientRect(rcClient);
 
-            CString text;
-            text.Format(_T("r: %ul, l: %ul, width: %d, height: %d\n"), rcClient.left, rcClient.left, rcClient.Width(), rcClient.Height());
-            ::OutputDebugString(text.GetBuffer());
+            console.info(_T("r: %ul, l: %ul, width: %d, height: %d\n"),
+                         rcClient.left, rcClient.left, rcClient.Width(), rcClient.Height());
 
             pPreviewWnd_ = pPreviewWnd;
         }
@@ -261,7 +261,7 @@ LRESULT CAVStreamingDlg::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
     {
         case WM_WINDOWPOSCHANGED:
             if (pCameraHostDlg_ != NULL) {
-                CCameraCapture * pCameraCapture = pCameraHostDlg_->GetSafeCapture();
+                CameraCapture * pCameraCapture = pCameraHostDlg_->GetSafeCapture();
                 if (pCameraCapture != NULL) {
                     pCameraCapture->WindowStateChange(!this->IsIconic());
                 }
