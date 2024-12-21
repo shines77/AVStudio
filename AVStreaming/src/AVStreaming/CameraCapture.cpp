@@ -78,7 +78,8 @@ HRESULT CCameraCapture::CreateEnv()
 
     // 创建 filter graph manager
     SAFE_COM_RELEASE(pFilterGraph_);
-    hr = CoCreateInstance(CLSID_FilterGraph, NULL, CLSCTX_INPROC_SERVER, IID_IGraphBuilder, (void**)&pFilterGraph_);
+    hr = CoCreateInstance(CLSID_FilterGraph, NULL, CLSCTX_INPROC_SERVER,
+                          IID_IGraphBuilder, (void**)&pFilterGraph_);
     if (FAILED(hr))
         return hr;
 
@@ -321,7 +322,8 @@ int CCameraCapture::ENumVideoDevices()
 
     // 创建系统设备枚举
     ICreateDevEnum * pCreateDevEnum = NULL;
-    hr = CoCreateInstance(CLSID_SystemDeviceEnum, NULL, CLSCTX_INPROC_SERVER, IID_ICreateDevEnum, (void**)&pCreateDevEnum);
+    hr = CoCreateInstance(CLSID_SystemDeviceEnum, NULL, CLSCTX_INPROC_SERVER,
+                          IID_ICreateDevEnum, (void**)&pCreateDevEnum);
     if (FAILED(hr) || pCreateDevEnum == NULL) {
         return hr;
     }
@@ -346,9 +348,7 @@ int CCameraCapture::ENumVideoDevices()
         if (hr == E_FAIL)
             break;
         else if (hr == S_FALSE) {
-            CString text;
-            text.Format(_T("Unable to access video capture device! index = %d\n"), video_dev_total);
-            OutputDebugString(text.GetBuffer());
+            console.error(_T("Unable to access video capture device! index = %d"), video_dev_total);
             break;
         }
         else if (hr != S_OK) {
@@ -360,9 +360,9 @@ int CCameraCapture::ENumVideoDevices()
         if (SUCCEEDED(hr)) {
             VARIANT var;
             var.vt = VT_BSTR;
-            hr = pPropBag->Read(L"Description", &var, NULL);
+            hr = pPropBag->Read(L"FriendlyName", &var, NULL);
             if (hr != NOERROR) {
-                hr = pPropBag->Read(L"FriendlyName", &var, NULL);
+                hr = pPropBag->Read(L"Description", &var, NULL);
             }
             if (hr == NOERROR) {
                 char deviceName[256] = { '\0' };
@@ -378,9 +378,7 @@ int CCameraCapture::ENumVideoDevices()
                     video_dev_count++;
                 }
                 else {
-                    CString text;
-                    text.Format(_T("Video BindToObject Failed. index = %d\n"), video_dev_total);
-                    OutputDebugString(text.GetBuffer());
+                    console.error(_T("Video BindToObject Failed. index = %d"), video_dev_total);
                 }
                 if (pVideoFilter != NULL) {
                     pVideoFilter->Release();
@@ -406,7 +404,8 @@ int CCameraCapture::EnumAudioDevices()
 
     // 创建系统设备枚举
     ICreateDevEnum * pCreateDevEnum = NULL;
-    hr = CoCreateInstance(CLSID_SystemDeviceEnum, NULL, CLSCTX_INPROC_SERVER, IID_ICreateDevEnum, (void**)&pCreateDevEnum);
+    hr = CoCreateInstance(CLSID_SystemDeviceEnum, NULL, CLSCTX_INPROC_SERVER,
+                          IID_ICreateDevEnum, (void**)&pCreateDevEnum);
     if (FAILED(hr) || pCreateDevEnum == NULL) {
         return hr;
     }
@@ -431,9 +430,7 @@ int CCameraCapture::EnumAudioDevices()
         if (hr == E_FAIL)
             break;
         else if (hr == S_FALSE) {
-            CString text;
-            text.Format(_T("Unable to access audio capture device! index = %d\n"), audio_dev_total);
-            OutputDebugString(text.GetBuffer());
+            console.error(_T("Unable to access audio capture device! index = %d"), audio_dev_total);
             break;
         }
         else if (hr != S_OK) {
@@ -445,9 +442,9 @@ int CCameraCapture::EnumAudioDevices()
         if (SUCCEEDED(hr)) {
             VARIANT var;
             var.vt = VT_BSTR;
-            hr = pPropBag->Read(L"Description", &var, NULL);
+            hr = pPropBag->Read(L"FriendlyName", &var, NULL);
             if (hr != NOERROR) {
-                hr = pPropBag->Read(L"FriendlyName", &var, NULL);
+                hr = pPropBag->Read(L"Description", &var, NULL);
             }
             if (hr == NOERROR) {
                 char deviceName[256] = { '\0' };
@@ -463,9 +460,7 @@ int CCameraCapture::EnumAudioDevices()
                     audio_dev_count++;
                 }
                 else {
-                    CString text;
-                    text.Format(_T("Audio BindToObject Failed. index = %d\n"), audio_dev_total);
-                    OutputDebugString(text.GetBuffer());
+                    console.error(_T("Audio BindToObject Failed. index = %d"), audio_dev_total);
                 }
                 if (pAudioFilter != NULL) {
                     pAudioFilter->Release();
@@ -529,9 +524,7 @@ bool CCameraCapture::CreateVideoFilter(const char * videoDevice)
         if (hr == E_FAIL)
             break;
         else if (hr == S_FALSE) {
-            CString text;
-            text.Format(_T("Unable to access video capture device! index = %d\n"), nIndex);
-            OutputDebugString(text.GetBuffer());
+            console.error(_T("Unable to access video capture device! index = %d"), nIndex);
             break;
         }
         else if (hr != S_OK) {
@@ -560,9 +553,7 @@ bool CCameraCapture::CreateVideoFilter(const char * videoDevice)
                         result = true;
                     }
                     else {
-                        CString text;
-                        text.Format(_T("Video BindToObject Failed. index = %d\n"), nIndex);
-                        OutputDebugString(text.GetBuffer());
+                        console.error(_T("Video BindToObject Failed. index = %d"), nIndex);
                     }
                 }
             }
@@ -611,9 +602,7 @@ bool CCameraCapture::CreateAudioFilter(const char * audioDevice)
         if (hr == E_FAIL)
             break;
         else if (hr == S_FALSE) {
-            CString text;
-            text.Format(_T("Unable to access audio capture device! index = %d\n"), nIndex);
-            OutputDebugString(text.GetBuffer());
+            console.error(_T("Unable to access audio capture device! index = %d\n"), nIndex);
             break;
         }
         else if (hr != S_OK) {
@@ -632,7 +621,7 @@ bool CCameraCapture::CreateAudioFilter(const char * audioDevice)
             if (hr == NOERROR) {
                 char deviceName[256] = { '\0' };
                 // 获取设备名称
-                WideCharToMultiByte(CP_ACP, 0, var.bstrVal, -1, deviceName, sizeof(deviceName), "", NULL);
+                ::WideCharToMultiByte(CP_ACP, 0, var.bstrVal, -1, deviceName, sizeof(deviceName), "", NULL);
                 SysFreeString(var.bstrVal);
                 if (audioDevice != NULL && strcmp(audioDevice, deviceName) == 0) {
                     SAFE_COM_RELEASE(pAudioFilter_);
@@ -642,9 +631,7 @@ bool CCameraCapture::CreateAudioFilter(const char * audioDevice)
                         result = true;
                     }
                     else {
-                        CString text;
-                        text.Format(_T("Audio BindToObject Failed. index = %d\n"), nIndex);
-                        OutputDebugString(text.GetBuffer());
+                        console.error(_T("Audio BindToObject Failed. index = %d"), nIndex);
                     }
                 }
             }
@@ -658,6 +645,42 @@ bool CCameraCapture::CreateAudioFilter(const char * audioDevice)
     pEnumMoniker->Release();
     pCreateDevEnum->Release();
     return result;
+}
+
+HRESULT CCameraCapture::StartPreview()
+{
+    HRESULT hr = E_FAIL;
+
+    //
+
+    return hr;
+}
+
+HRESULT CCameraCapture::StopPreview()
+{
+    HRESULT hr = E_FAIL;
+
+    //
+
+    return hr;
+}
+
+HRESULT CCameraCapture::StartCapture()
+{
+    HRESULT hr = E_FAIL;
+
+    //
+
+    return hr;
+}
+
+HRESULT CCameraCapture::StopCapture()
+{
+    HRESULT hr = E_FAIL;
+
+    //
+
+    return hr;
 }
 
 // 渲染摄像头预览视频

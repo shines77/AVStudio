@@ -1,6 +1,14 @@
 
 #pragma once
 
+#if defined(_WIN32) || defined(_WIN64)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN 1
+#endif
+#include <windows.h>
+#include <tchar.h>
+#endif // _WIN32 || _WIN64
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <strsafe.h>
@@ -420,6 +428,7 @@ struct BasicWriter
     typedef std::basic_string<char_type> string_type;
 
     static const bool kIsStreamWriter = false;
+    static const bool kIsWideChar = (sizeof(char_type) > 1);
 
     BasicWriter() { }
     ~BasicWriter() { }
@@ -462,6 +471,7 @@ struct BasicStreamWriter
     typedef std::basic_string<char_type> string_type;
 
     static const bool kIsStreamWriter = true;
+    static const bool kIsWideChar = (sizeof(char_type) > 1);
 
     BasicStreamWriter() { }
     ~BasicStreamWriter() { }
@@ -481,24 +491,36 @@ struct BasicStreamWriter
     void new_line() { /* Do nothing ! */ }
 };
 
-struct ConsoleWriter : public BasicWriter<char>
+template <typename CharType>
+struct ConsoleWriter : public BasicWriter<CharType>
 {
-    void write(const char * text) {
-        ::printf(text);
+    typedef CharType char_type;
+
+    void write(const char_type * text) {
+        if (kIsWideChar)
+            ::printf((const wchar_t *)text);
+        else
+            ::printf((const char *)text);
     }
 
     void new_line() {
 #if defined(_WIN32) || defined(_WIN64) || defined(_WINDOWS)
-        ::printf("\r\n");
+        if (kIsWideChar)
+            ::wprintf(L"\r\n");
+        else
+            ::printf("\r\n");
 #else
         ::printf("\n");
 #endif
     }
 };
 
-struct StdWriter : public BasicWriter<char>
+template <typename CharType>
+struct StdWriter : public BasicWriter<CharType>
 {
-    void write(const char * text) {
+    typedef CharType char_type;
+
+    void write(const char_type * text) {
         std::cout << text;
     }
 
@@ -507,8 +529,12 @@ struct StdWriter : public BasicWriter<char>
     }
 };
 
+template <typename CharType>
 struct StdFileWriter : public BasicStreamWriter<char>
 {
+    typedef CharType                     char_type;
+    typedef std::basic_string<char_type> string_type;
+
     int open(const string_type & filename, bool onlyAppend = true) {
         int status = FileStatus::Unknown;
         if (!out_file_.is_open()) {
@@ -541,7 +567,7 @@ struct StdFileWriter : public BasicStreamWriter<char>
         }
     }
 
-    void write(const char * text) {
+    void write(const char_type * text) {
         out_file_ << text;
     }
 
@@ -571,8 +597,54 @@ struct StdFileWriter : public BasicStreamWriter<char>
     std::ofstream out_file_;
 };
 
-using Console = ConsoleBase<ConsoleWriter, char>;
-using StdConsole = ConsoleBase<StdWriter, char>;
-using StdFileLog = ConsoleBase<StdFileWriter, char>;
+#if defined(_WIN32) || defined(_WIN64)
+
+struct OutputDebugWriter : public BasicWriter<TCHAR>
+{
+    void write(const TCHAR * text) {
+        ::OutputDebugString(text);
+    }
+
+    void new_line() {
+        ::OutputDebugString(_T("\r\n"));
+    }
+};
+
+struct OutputDebugWriterA : public BasicWriter<char>
+{
+    void write(const char * text) {
+        ::OutputDebugStringA(text);
+    }
+
+    void new_line() {
+        ::OutputDebugStringA("\r\n");
+    }
+};
+
+struct OutputDebugWriterW : public BasicWriter<wchar_t>
+{
+    void write(const wchar_t * text) {
+        ::OutputDebugStringW(text);
+    }
+
+    void new_line() {
+        ::OutputDebugStringW(L"\r\n");
+    }
+};
+
+#endif // _WIN32 || _WIN64
+
+using Console = ConsoleBase<ConsoleWriter<char>, char>;
+using StdConsole = ConsoleBase<StdWriter<char>, char>;
+using StdFileLog = ConsoleBase<StdFileWriter<char>, char>;
+
+#if defined(_WIN32) || defined(_WIN64)
+using ConsoleT = ConsoleBase<ConsoleWriter<TCHAR>, TCHAR>;
+using StdConsoleT = ConsoleBase<StdWriter<TCHAR>, TCHAR>;
+using StdFileLogT = ConsoleBase<StdFileWriter<TCHAR>, TCHAR>;
+
+using OutputDebugConsole = ConsoleBase<OutputDebugWriterA, char>;
+using OutputDebugConsoleT = ConsoleBase<OutputDebugWriter, TCHAR>;
+#endif // _WIN32 || _WIN64
 
 } // namespace av

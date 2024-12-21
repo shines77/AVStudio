@@ -2,4 +2,8 @@
 #include "stdafx.h"
 #include "global.h"
 
-av::Console console;
+#ifdef NDEBUG
+av::StdFileLogT console;
+#else
+av::OutputDebugConsoleT console;
+#endif

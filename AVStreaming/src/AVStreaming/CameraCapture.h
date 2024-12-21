@@ -181,6 +181,12 @@ public:
     // 根据选择的设备创建 Audio Capture Filter
     bool CreateAudioFilter(const char * audioDevice = NULL);
 
+    HRESULT StartPreview();
+    HRESULT StopPreview();
+
+    HRESULT StartCapture();
+    HRESULT StopCapture();
+
     // 渲染预览窗口
     bool Render(int mode, TCHAR * videoPath = NULL,
                 const char * videoDevice = NULL,
