@@ -161,7 +161,7 @@ BOOL CAVStreamingDlg::OnInitDialog()
             CRect rcClient;
             pPreviewWnd->GetClientRect(rcClient);
 
-            console.info(_T("r: %ul, l: %ul, width: %d, height: %d\n"),
+            console.info(_T("r: %ul, l: %ul, width: %d, height: %d"),
                          rcClient.left, rcClient.left, rcClient.Width(), rcClient.Height());
 
             pPreviewWnd_ = pPreviewWnd;

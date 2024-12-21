@@ -158,7 +158,7 @@ public:
         errno_t err = ::wcscpy_s(dest, size - 1, src);
         return (int)err;
 #else
-        int out_len = ::WideCharToMultiByte(CP_ACP, 0, src, -1, dest, size, "", NULL);
+        int out_len = ::WideCharToMultiByte(CP_ACP, 0, src, -1, dest, size - 1, "", NULL);
         return out_len;
 #endif
     }

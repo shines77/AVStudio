@@ -6,6 +6,8 @@
 #include "AVStreaming.h"
 #include "AVStreamingDlg.h"
 
+#include "global.h"
+
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
@@ -65,6 +67,10 @@ BOOL CAVStreamingApp::InitInstance()
 	// TODO: 应适当修改该字符串，
 	// 例如修改为公司或组织名
 	SetRegistryKey(_T("应用程序向导生成的本地应用程序"));
+
+    if (console.is_stream_writer()) {
+        int ret = console.open(_T("AVStreaming.log"), false);
+    }
 
 	CAVStreamingDlg dlg;
 	m_pMainWnd = &dlg;

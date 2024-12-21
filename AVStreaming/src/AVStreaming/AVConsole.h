@@ -63,6 +63,7 @@ public:
     typedef CharType                        char_type;
     typedef Writer                          writer_t;
     typedef ConsoleBase<Writer, CharType>   this_type;
+    typedef std::basic_string<char_type>    string_type;
 
     static const bool kIsWideChar = (sizeof(CharType) > 1);
 
@@ -92,11 +93,15 @@ public:
         return (file_state_ == FileState::Openning);
     }
 
-    std::string filename() const {
+    string_type filename() const {
         return filename_;
     }
 
-    int open(const std::string & filename, bool onlyAppend = true) {
+    bool is_stream_writer() const {
+        return writer_.is_stream_writer();
+    }
+
+    int open(const string_type & filename, bool onlyAppend = true) {
         int state = FileState::Unknown;
         if (filename.empty()) {
             return state;
@@ -104,15 +109,15 @@ public:
         // If file is opened, close it.
         if (is_open()) {
             if (!filename_.empty()) {
-                std::string lower_filename1(filename);
-                std::string lower_filename2(filename_);
+                string_type lower_filename1(filename);
+                string_type lower_filename2(filename_);
                 str_to_lower(lower_filename1);
                 str_to_lower(lower_filename2);
                 // If filename is same, skip to close.
                 if (lower_filename1 != lower_filename2) {
                     flush();
                     state = close();
-                    filename_ = "";
+                    filename_ = _T("");
                 }
             }
         }
@@ -191,10 +196,6 @@ public:
         va_start(args, fmt);
         write_log_args(LogLevel::Trace, fmt, args);
         va_end(args);
-    }
-
-    bool can_write(int level) const {
-        return (level != LogLevel::Trace) ? (level <= level_) : true;
     }
 
     bool try_fatal() {
@@ -331,6 +332,10 @@ protected:
         }
     }
 
+    bool can_write(int level) const {
+        return (level != LogLevel::Trace) ? (level <= level_) : true;
+    }
+
     bool try_write_log(int level) {
         if (can_write(level) && writer_.is_stream_writer()) {
             write_header(level);
@@ -416,8 +421,8 @@ private:
 protected:
     int         level_;
     int         file_state_;
-    std::string filename_;
-    std::string pattern_;
+    string_type filename_;
+    string_type pattern_;
     writer_t    writer_;
 };
 
@@ -530,7 +535,7 @@ struct StdWriter : public BasicWriter<CharType>
 };
 
 template <typename CharType>
-struct StdFileWriter : public BasicStreamWriter<char>
+struct StdFileWriter : public BasicStreamWriter<CharType>
 {
     typedef CharType                     char_type;
     typedef std::basic_string<char_type> string_type;
@@ -594,7 +599,7 @@ struct StdFileWriter : public BasicStreamWriter<char>
         return self;
     }
 
-    std::ofstream out_file_;
+    std::basic_ofstream<char_type> out_file_;
 };
 
 #if defined(_WIN32) || defined(_WIN64)

@@ -484,7 +484,7 @@ int CameraCapture::EnumVideoDevices()
             if (hr == NOERROR) {
                 TCHAR deviceName[256] = { '\0' };
                 // 获取设备名称
-                int ret = string_utils::unicode_to_tchar(deviceName, sizeof(deviceName), var.bstrVal);
+                int ret = string_utils::unicode_to_tchar(deviceName, _countof(deviceName), var.bstrVal);
                 ::SysFreeString(var.bstrVal);
                 // 尝试用当前设备绑定到 video filter
                 IBaseFilter * pVideoFilter = NULL;
@@ -566,7 +566,7 @@ int CameraCapture::EnumAudioDevices()
             if (hr == NOERROR) {
                 TCHAR deviceName[256] = { '\0' };
                 // 获取设备名称
-                int ret = string_utils::unicode_to_tchar(deviceName, sizeof(deviceName), var.bstrVal);
+                int ret = string_utils::unicode_to_tchar(deviceName, _countof(deviceName), var.bstrVal);
                 ::SysFreeString(var.bstrVal);
                 // 尝试用当前设备绑定到 audio filter
                 IBaseFilter * pAudioFilter = NULL;
@@ -640,7 +640,7 @@ HRESULT CameraCapture::BindDeviceFilter(IBaseFilter ** ppDeviceFilter, IMoniker 
         if (hr == NOERROR) {
             TCHAR deviceName[256] = { '\0' };
             // 获取设备名称
-            int ret = string_utils::unicode_to_tchar(deviceName, sizeof(deviceName), var.bstrVal);
+            int ret = string_utils::unicode_to_tchar(deviceName, _countof(deviceName), var.bstrVal);
             ::SysFreeString(var.bstrVal);
             hr = E_FAIL;
             if (inDeviceName != NULL && _tcscmp(inDeviceName, deviceName) == 0) {
@@ -791,8 +791,8 @@ HRESULT CameraCapture::StopCapture()
 
 // 渲染摄像头预览视频
 bool CameraCapture::Render(int mode, TCHAR * videoPath,
-                            const TCHAR * videoDevice,
-                            const TCHAR * audioDevice)
+                           const TCHAR * videoDevice,
+                           const TCHAR * audioDevice)
 {
     HRESULT hr;
 
@@ -820,7 +820,7 @@ bool CameraCapture::Render(int mode, TCHAR * videoPath,
             // preview was faked up for us using the (only) capture pin
         }
         else if (hr != S_OK) {
-            OutputDebugString(_T("This graph cannot preview!\n"));
+            console.error(_T("This graph cannot preview!"));
             return false;
         }
     }
@@ -840,7 +840,7 @@ bool CameraCapture::Render(int mode, TCHAR * videoPath,
             // preview was faked up for us using the (only) capture pin
         }
         else if (hr != S_OK) {
-            OutputDebugString(_T("This graph cannot preview!\n"));
+            console.error(_T("This graph cannot preview!"));
             return false;
         }
 

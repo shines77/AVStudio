@@ -3,6 +3,7 @@
 #include "utils.h"
 
 #include <assert.h>
+#include <locale>
 #include <algorithm>
 #include <cctype>
 
@@ -12,10 +13,24 @@ void str_to_lower(std::string & str)
                    [](unsigned char c) { return std::tolower(c); });
 }
 
+void str_to_lower(std::wstring & str)
+{
+    std::locale loc("");
+    std::transform(str.begin(), str.end(), str.begin(),
+                   [&](wchar_t c) { return std::tolower(c, loc); });
+}
+
 void str_to_upper(std::string & str)
 {
     std::transform(str.begin(), str.end(), str.begin(),
                    [](unsigned char c) { return std::toupper(c); });
+}
+
+void str_to_upper(std::wstring & str)
+{
+    std::locale loc("");
+    std::transform(str.begin(), str.end(), str.begin(),
+                   [&](wchar_t c) { return std::toupper(c, loc); });
 }
 
 bool av_q2d_eq(AVRational a, AVRational b)

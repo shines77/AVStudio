@@ -9,6 +9,9 @@ extern "C" {
 void str_to_lower(std::string & str);
 void str_to_upper(std::string & str);
 
+void str_to_lower(std::wstring & str);
+void str_to_upper(std::wstring & str);
+
 bool av_q2d_eq(AVRational a, AVRational b);
 bool av_q2d_lt(AVRational a, AVRational b);
 bool av_q2d_gt(AVRational a, AVRational b);
