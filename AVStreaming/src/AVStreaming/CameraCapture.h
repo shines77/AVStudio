@@ -178,10 +178,10 @@ public:
     // 枚举音频压缩格式
     int EnumAudioCompressFormat();
 
-    // 根据选择的设备创建 Video Capture Filter
-    bool CreateVideoFilter(const TCHAR * videoDevice = NULL);
-    // 根据选择的设备创建 Audio Capture Filter
-    bool CreateAudioFilter(const TCHAR * audioDevice = NULL);
+    // 根据选择的设备绑定 Video Capture Filter
+    HRESULT BindVideoFilter(const TCHAR * videoDevice);
+    // 根据选择的设备绑定 Audio Capture Filter
+    HRESULT BindAudioFilter(const TCHAR * audioDevice);
 
     HRESULT StartPreview();
     HRESULT StopPreview();
@@ -206,6 +206,20 @@ public:
 protected:
     void InitEnv();
 
+    static const TCHAR * GetDeviceType(bool isVideo);
+    static const wchar_t * GetDeviceFilterName(bool isVideo);
+    static REFCLSID GetDeviceCategory(bool isVideo);
+
+    void RemoveDownstream(IBaseFilter * filter);
+    void TearDownGraph();
+
+    HRESULT BindDeviceFilter(IBaseFilter ** ppDeviceFilter, IMoniker ** ppDeviceMoniker,
+                             int nIndex, IMoniker * pMoniker,
+                             const TCHAR * inDeviceName, bool isVideo);
+    HRESULT BindDeviceFilter(IBaseFilter ** ppDeviceFilter, IMoniker ** ppDeviceMoniker,
+                             const TCHAR * inDeviceName, bool isVideo);
+    void ReleaseDeviceFilter(IBaseFilter ** ppFilter);
+
 private:
     HWND                    hwndPreview_;           // 预览窗口句柄
     PLAY_STATE              playState_;             // 播放状态
@@ -220,6 +234,9 @@ private:
     IVideoWindow *          pVideoWindow_;          // 视频播放窗口
     IMediaControl *         pVideoMediaControl_;    // 摄像头流媒体的控制开关（控制其开始、暂停、结束）
     IMediaEventEx *         pVideoMediaEvent_;      // 摄像头流媒体的控制事件
+
+    IMoniker *              pVideoMoniker_;         // Video 设备
+    IMoniker *              pAudioMoniker_;         // Audio 设备
 
     IAMVideoCompression *   pVideoCompression_;     // Video 压缩格式
 

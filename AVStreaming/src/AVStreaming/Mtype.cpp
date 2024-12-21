@@ -9,17 +9,17 @@
 //
 // Release the format block for a media type.
 //
-void _FreeMediaType(AM_MEDIA_TYPE & mt)
+void _FreeMediaType(AM_MEDIA_TYPE & mediaType)
 {
-    if (mt.cbFormat != 0) {
-        CoTaskMemFree((PVOID)mt.pbFormat);
-        mt.cbFormat = 0;
-        mt.pbFormat = NULL;
+    if (mediaType.cbFormat != 0) {
+        CoTaskMemFree((PVOID)mediaType.pbFormat);
+        mediaType.cbFormat = 0;
+        mediaType.pbFormat = NULL;
     }
-    if (mt.pUnk != NULL) {
+    if (mediaType.pUnk != NULL) {
         // pUnk should not be used.
-        mt.pUnk->Release();
-        mt.pUnk = NULL;
+        mediaType.pUnk->Release();
+        mediaType.pUnk = NULL;
     }
 }
 

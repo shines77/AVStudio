@@ -8,6 +8,7 @@
 #include <windows.h>
 
 #include <atlconv.h>
+#include <assert.h>
 
 #include "macros.h"
 #include "global.h"
@@ -32,6 +33,21 @@ extern "C" {
 // From: https://blog.csdn.net/ett_qin/article/details/86691479
 // See: https://www.cnblogs.com/linuxAndMcu/p/12068978.html
 //
+
+const TCHAR * CameraCapture::GetDeviceType(bool isVideo)
+{
+    return (isVideo) ? _T("Video") : _T("Audio");
+}
+
+const wchar_t * CameraCapture::GetDeviceFilterName(bool isVideo)
+{
+    return (isVideo) ? L"Video Filter" : L"Audio Filter";
+}
+
+REFCLSID CameraCapture::GetDeviceCategory(bool isVideo)
+{
+    return (isVideo) ? CLSID_VideoInputDeviceCategory : CLSID_AudioInputDeviceCategory;;
+}
 
 CameraCapture::CameraCapture(HWND hwndPreview /* = NULL */)
 {
@@ -61,6 +77,9 @@ void CameraCapture::InitEnv()
     pVideoMediaControl_ = NULL;
     pVideoMediaEvent_ = NULL;
 
+    pVideoMoniker_ = NULL;
+    pAudioMoniker_ = NULL;
+
     pVideoGrabber_ = NULL;
     pAudioGrabber_ = NULL;
 
@@ -81,6 +100,12 @@ void CameraCapture::Release()
 
     SAFE_COM_RELEASE(pVideoFilter_);
     SAFE_COM_RELEASE(pAudioFilter_);
+
+    SAFE_COM_RELEASE(pVideoMoniker_);
+    SAFE_COM_RELEASE(pAudioMoniker_);
+
+    SAFE_COM_RELEASE(pVideoGrabber_);
+    SAFE_COM_RELEASE(pAudioGrabber_);
 
     SAFE_COM_RELEASE(pCaptureBuilder_);
     SAFE_COM_RELEASE(pFilterGraph_);
@@ -133,19 +158,96 @@ HRESULT CameraCapture::CreateEnv()
     return hr;
 }
 
+//
+// Tear down everything downstream of a given filter
+//
+void CameraCapture::RemoveDownstream(IBaseFilter * pFilter)
+{
+    if (pFilter == nullptr)
+        return;
+
+    IEnumPins * pEnumPins = NULL;
+    HRESULT hr = pFilter->EnumPins(&pEnumPins);
+    if (hr == NOERROR && pEnumPins != nullptr) {
+        hr = pEnumPins->Reset();
+    }
+
+    IPin *pPins = NULL, *pInputPin = NULL;
+    PIN_INFO pin_info;
+    ULONG uFetched = 0;
+    while (hr == NOERROR) {
+        hr = pEnumPins->Next(1, &pPins, &uFetched);
+        if (hr == S_OK && pPins != nullptr) {
+            pInputPin = nullptr;
+            hr = pPins->ConnectedTo(&pInputPin);
+            if (pInputPin != nullptr) {
+                hr = pInputPin->QueryPinInfo(&pin_info);
+                if (hr == NOERROR && pin_info.pFilter != nullptr) {
+                    if (pin_info.dir == PINDIR_INPUT) {
+                        // Recur call
+                        RemoveDownstream(pin_info.pFilter);
+                        pFilterGraph_->Disconnect(pInputPin);
+                        pFilterGraph_->Disconnect(pPins);
+                        pFilterGraph_->RemoveFilter(pin_info.pFilter);
+                    }
+                    pin_info.pFilter->Release();
+                }
+                pInputPin->Release();
+            }
+            pPins->Release();
+        }
+    }
+
+    if (pEnumPins != nullptr) {
+        pEnumPins->Release();
+    }
+}
+
+//
+// Tear down everything downstream of the capture filters, so we can build
+// a different capture graph.  Notice that we never destroy the capture filters
+// and WDM filters upstream of them, because then all the capture settings
+// we've set would be lost.
+//
+void CameraCapture::TearDownGraph()
+{
+    SAFE_COM_RELEASE(pVideoMediaEvent_);
+    SAFE_COM_RELEASE(pVideoMediaControl_);
+    SAFE_COM_RELEASE(pDroppedFrames_);
+
+    if (pVideoWindow_ != nullptr) {
+        // Stop drawing in our window, or we may get wierd repaint effects
+        pVideoWindow_->put_Owner(NULL);
+        pVideoWindow_->put_Visible(OAFALSE);
+        pVideoWindow_->Release();
+        pVideoWindow_ = NULL;
+    }
+
+    // Destroy the graph downstream of our capture filters
+    if (pVideoFilter_ != nullptr) {
+        RemoveDownstream(pVideoFilter_);
+    }
+    if (pAudioFilter_ != nullptr) {
+        RemoveDownstream(pAudioFilter_);
+    }
+    if (pVideoFilter_ != nullptr) {
+        //pCaptureBuilder_->ReleaseFilters();
+    }
+}
+
 HRESULT CameraCapture::Stop()
 {
     HRESULT hr = E_FAIL;
 
     // Stop previewing data
-    if (pVideoMediaControl_ != NULL) {
+    if (pVideoMediaControl_ != nullptr) {
         hr = pVideoMediaControl_->StopWhenReady();
     }
 
     playState_ = PLAY_STATE::Stopped;
 
     // Stop receiving events
-    if (pVideoMediaEvent_ != NULL) {
+    if (pVideoMediaEvent_ != nullptr) {
         hr = pVideoMediaEvent_->SetNotifyWindow(NULL, WM_GRAPH_NOTIFY, 0);
     }
 
@@ -153,7 +255,7 @@ HRESULT CameraCapture::Stop()
     // Failing to call put_Owner can lead to assert failures within
     // the video renderer, as it still assumes that it has a valid
     // parent window.
-    if (pVideoWindow_ != NULL) {
+    if (pVideoWindow_ != nullptr) {
         hr = pVideoWindow_->put_Visible(OAFALSE);
         hr = pVideoWindow_->put_Owner(NULL);
     }
@@ -352,189 +454,8 @@ int CameraCapture::EnumVideoDevices()
 
     ULONG cFetched = 0;
     IMoniker * pMoniker = NULL;
-    int video_dev_total = 0;
-    int video_dev_count = 0;
-    videoDeviceList_.clear();
-
-    // 枚举设备
-    while (1) {
-        hr = pEnumMoniker->Next(1, &pMoniker, &cFetched);
-        if (hr == E_FAIL) {
-            break;
-        }
-        else if (hr == S_FALSE) {
-            console.error(_T("Unable to access video capture device! index = %d"), video_dev_total);
-            break;
-        }
-        else if (hr != S_OK) {
-            console.error(_T("Unable to access video capture device! Error = %d"), (int)hr);
-            break;
-        }
-        // 设备属性信息
-        IPropertyBag * pPropBag = NULL;
-        hr = pMoniker->BindToStorage(0, 0, IID_IPropertyBag, (void **)&pPropBag);
-        if (SUCCEEDED(hr)) {
-            VARIANT var;
-            var.vt = VT_BSTR;
-            hr = pPropBag->Read(L"FriendlyName", &var, NULL);
-            if (hr != NOERROR) {
-                hr = pPropBag->Read(L"Description", &var, NULL);
-            }
-            if (hr == NOERROR) {
-                TCHAR deviceName[256] = { '\0' };
-                // 获取设备名称
-                int ret = string_utils::unicode_to_tchar(deviceName, sizeof(deviceName), var.bstrVal);
-                ::SysFreeString(var.bstrVal);
-                // 尝试用当前设备绑定到 video filter
-                IBaseFilter * pVideoFilter = NULL;
-                hr = pMoniker->BindToObject(0, 0, IID_IBaseFilter, (void **)&pVideoFilter);
-                if (SUCCEEDED(hr) && pVideoFilter != NULL) {
-                    // 绑定成功则添加到设备列表
-                    videoDeviceList_.push_back(deviceName);
-                    video_dev_count++;
-                }
-                else {
-                    console.error(_T("Video BindToObject Failed. index = %d"), video_dev_total);
-                }
-                if (pVideoFilter != NULL) {
-                    pVideoFilter->Release();
-                }
-            }
-            pPropBag->Release();
-        }
-        pMoniker->Release();
-        pMoniker = NULL;
-        video_dev_total++;
-    }
-
-    pEnumMoniker->Release();
-    pCreateDevEnum->Release();
-
-    return video_dev_count;
-}
-
-// 枚举音频采集设备
-int CameraCapture::EnumAudioDevices()
-{
-    HRESULT hr;
-
-    // 创建系统设备枚举
-    ICreateDevEnum * pCreateDevEnum = NULL;
-    hr = CoCreateInstance(CLSID_SystemDeviceEnum, NULL, CLSCTX_INPROC_SERVER,
-                          IID_ICreateDevEnum, (void**)&pCreateDevEnum);
-    if (FAILED(hr) || pCreateDevEnum == NULL) {
-        return hr;
-    }
-
-    // 创建一个指定音频采集设备的枚举
-    IEnumMoniker * pEnumMoniker = NULL;
-    hr = pCreateDevEnum->CreateClassEnumerator(CLSID_AudioInputDeviceCategory, &pEnumMoniker, 0);
-    if (FAILED(hr) || pEnumMoniker == NULL) {
-        SAFE_COM_RELEASE(pCreateDevEnum);
-        return hr;
-    }
-
-    ULONG cFetched = 0;
-    IMoniker * pMoniker = NULL;
-    int audio_dev_total = 0;
-    int audio_dev_count = 0;
-    audioDeviceList_.clear();
-
-    // 枚举设备
-    while (1) {
-        hr = pEnumMoniker->Next(1, &pMoniker, &cFetched);
-        if (hr == E_FAIL) {
-            break;
-        }
-        else if (hr == S_FALSE) {
-            console.error(_T("Unable to access audio capture device! index = %d"), audio_dev_total);
-            break;
-        }
-        else if (hr != S_OK) {
-            console.error(_T("Unable to access audio capture device! Error = %d"), (int)hr);
-            break;
-        }
-        // 设备属性信息
-        IPropertyBag * pPropBag = NULL;
-        hr = pMoniker->BindToStorage(0, 0, IID_IPropertyBag, (void **)&pPropBag);
-        if (SUCCEEDED(hr)) {
-            VARIANT var;
-            var.vt = VT_BSTR;
-            hr = pPropBag->Read(L"FriendlyName", &var, NULL);
-            if (hr != NOERROR) {
-                hr = pPropBag->Read(L"Description", &var, NULL);
-            }
-            if (hr == NOERROR) {
-                TCHAR deviceName[256] = { '\0' };
-                // 获取设备名称
-                int ret = string_utils::unicode_to_tchar(deviceName, sizeof(deviceName), var.bstrVal);
-                ::SysFreeString(var.bstrVal);
-                // 尝试用当前设备绑定到 audio filter
-                IBaseFilter * pAudioFilter = NULL;
-                hr = pMoniker->BindToObject(0, 0, IID_IBaseFilter, (void **)&pAudioFilter);
-                if (SUCCEEDED(hr) && pAudioFilter != NULL) {
-                    // 绑定成功则添加到设备列表
-                    audioDeviceList_.push_back(deviceName);
-                    audio_dev_count++;
-                }
-                else {
-                    console.error(_T("Audio BindToObject Failed. index = %d"), audio_dev_total);
-                }
-                if (pAudioFilter != NULL) {
-                    pAudioFilter->Release();
-                }
-            }
-            pPropBag->Release();
-        }
-        pMoniker->Release();
-        pMoniker = NULL;
-        audio_dev_total++;
-    }
-
-    pEnumMoniker->Release();
-    pCreateDevEnum->Release();
-
-    return audio_dev_count;
-}
-
-// 枚举视频压缩格式
-int CameraCapture::EnumVideoCompressFormat()
-{
-    return 0;
-}
-
-// 枚举音频压缩格式
-int CameraCapture::EnumAudioCompressFormat()
-{
-    return 0;
-}
-
-// 根据选择的设备获取 Video Capture Filter
-bool CameraCapture::CreateVideoFilter(const TCHAR * videoDevice)
-{
-    if (videoDevice == NULL)
-        return false;
-
-    // 创建系统设备枚举
-    ICreateDevEnum * pCreateDevEnum = NULL;
-    HRESULT hr = CoCreateInstance(CLSID_SystemDeviceEnum, NULL, CLSCTX_INPROC_SERVER,
-                                  IID_ICreateDevEnum, (void**)&pCreateDevEnum);
-    if (FAILED(hr) || pCreateDevEnum == NULL) {
-        return false;
-    }
-
-    // 创建一个指定视频采集设备的枚举
-    IEnumMoniker * pEnumMoniker = NULL;
-    hr = pCreateDevEnum->CreateClassEnumerator(CLSID_VideoInputDeviceCategory, &pEnumMoniker, 0);
-    if (FAILED(hr) || pEnumMoniker == NULL) {
-        SAFE_COM_RELEASE(pCreateDevEnum);
-        return false;
-    }
-
-    bool result = false;
-    ULONG cFetched = 0;
     int nIndex = 0;
-    IMoniker * pMoniker = NULL;
+    videoDeviceList_.clear();
 
     // 枚举设备
     while (1) {
@@ -565,16 +486,18 @@ bool CameraCapture::CreateVideoFilter(const TCHAR * videoDevice)
                 // 获取设备名称
                 int ret = string_utils::unicode_to_tchar(deviceName, sizeof(deviceName), var.bstrVal);
                 ::SysFreeString(var.bstrVal);
-                if (videoDevice != NULL && _tcscmp(videoDevice, deviceName) == 0) {
-                    SAFE_COM_RELEASE(pVideoFilter_);
-                    // 尝试用当前设备绑定到 video filter
-                    hr = pMoniker->BindToObject(0, 0, IID_IBaseFilter, (void **)&pVideoFilter_);
-                    if (SUCCEEDED(hr) && pVideoFilter_ != NULL) {
-                        result = true;
-                    }
-                    else {
-                        console.error(_T("Video BindToObject Failed. index = %d"), nIndex);
-                    }
+                // 尝试用当前设备绑定到 video filter
+                IBaseFilter * pVideoFilter = NULL;
+                hr = pMoniker->BindToObject(0, 0, IID_IBaseFilter, (void **)&pVideoFilter);
+                if (SUCCEEDED(hr) && pVideoFilter != NULL) {
+                    // 绑定成功则添加到设备列表
+                    videoDeviceList_.push_back(deviceName);
+                }
+                else {
+                    console.error(_T("Video BindToObject Failed. index = %d"), nIndex);
+                }
+                if (pVideoFilter != NULL) {
+                    pVideoFilter->Release();
                 }
             }
             pPropBag->Release();
@@ -586,21 +509,21 @@ bool CameraCapture::CreateVideoFilter(const TCHAR * videoDevice)
 
     pEnumMoniker->Release();
     pCreateDevEnum->Release();
-    return result;
+
+    return (int)videoDeviceList_.size();
 }
 
-// 根据选择的设备获取 Audio Capture Filter
-bool CameraCapture::CreateAudioFilter(const TCHAR * audioDevice)
+// 枚举音频采集设备
+int CameraCapture::EnumAudioDevices()
 {
-    if (audioDevice == NULL)
-        return false;
+    HRESULT hr;
 
     // 创建系统设备枚举
     ICreateDevEnum * pCreateDevEnum = NULL;
-    HRESULT hr = CoCreateInstance(CLSID_SystemDeviceEnum, NULL, CLSCTX_INPROC_SERVER,
-                                  IID_ICreateDevEnum, (void**)&pCreateDevEnum);
+    hr = CoCreateInstance(CLSID_SystemDeviceEnum, NULL, CLSCTX_INPROC_SERVER,
+                          IID_ICreateDevEnum, (void**)&pCreateDevEnum);
     if (FAILED(hr) || pCreateDevEnum == NULL) {
-        return false;
+        return hr;
     }
 
     // 创建一个指定音频采集设备的枚举
@@ -608,13 +531,13 @@ bool CameraCapture::CreateAudioFilter(const TCHAR * audioDevice)
     hr = pCreateDevEnum->CreateClassEnumerator(CLSID_AudioInputDeviceCategory, &pEnumMoniker, 0);
     if (FAILED(hr) || pEnumMoniker == NULL) {
         SAFE_COM_RELEASE(pCreateDevEnum);
-        return false;
+        return hr;
     }
 
-    bool result = false;
     ULONG cFetched = 0;
-    int nIndex = 0;
     IMoniker * pMoniker = NULL;
+    int nIndex = 0;
+    audioDeviceList_.clear();
 
     // 枚举设备
     while (1) {
@@ -645,16 +568,18 @@ bool CameraCapture::CreateAudioFilter(const TCHAR * audioDevice)
                 // 获取设备名称
                 int ret = string_utils::unicode_to_tchar(deviceName, sizeof(deviceName), var.bstrVal);
                 ::SysFreeString(var.bstrVal);
-                if (audioDevice != NULL && _tcscmp(audioDevice, deviceName) == 0) {
-                    SAFE_COM_RELEASE(pAudioFilter_);
-                    // 尝试用当前设备绑定到 audio filter
-                    hr = pMoniker->BindToObject(0, 0, IID_IBaseFilter, (void **)&pAudioFilter_);
-                    if (SUCCEEDED(hr) && pAudioFilter_ != NULL) {
-                        result = true;
-                    }
-                    else {
-                        console.error(_T("Audio BindToObject Failed. index = %d"), nIndex);
-                    }
+                // 尝试用当前设备绑定到 audio filter
+                IBaseFilter * pAudioFilter = NULL;
+                hr = pMoniker->BindToObject(0, 0, IID_IBaseFilter, (void **)&pAudioFilter);
+                if (SUCCEEDED(hr) && pAudioFilter != NULL) {
+                    // 绑定成功则添加到设备列表
+                    audioDeviceList_.push_back(deviceName);
+                }
+                else {
+                    console.error(_T("Audio BindToObject Failed. index = %d"), nIndex);
+                }
+                if (pAudioFilter != NULL) {
+                    pAudioFilter->Release();
                 }
             }
             pPropBag->Release();
@@ -666,7 +591,166 @@ bool CameraCapture::CreateAudioFilter(const TCHAR * audioDevice)
 
     pEnumMoniker->Release();
     pCreateDevEnum->Release();
-    return result;
+
+    return (int)audioDeviceList_.size();
+}
+
+// 枚举视频压缩格式
+int CameraCapture::EnumVideoCompressFormat()
+{
+    return 0;
+}
+
+// 枚举音频压缩格式
+int CameraCapture::EnumAudioCompressFormat()
+{
+    return 0;
+}
+
+void CameraCapture::ReleaseDeviceFilter(IBaseFilter ** ppFilter)
+{
+    assert(ppFilter != nullptr);
+    IBaseFilter * pFilter = *ppFilter;
+    if (pFilter != nullptr) {
+        RemoveDownstream(pFilter);
+        pFilter->Release();
+        //pFilter = nullptr;
+        ppFilter = nullptr;
+    }
+}
+
+HRESULT CameraCapture::BindDeviceFilter(IBaseFilter ** ppDeviceFilter, IMoniker ** ppDeviceMoniker,
+                                        int nIndex, IMoniker * pMoniker,
+                                        const TCHAR * inDeviceName, bool isVideo)
+{
+    assert(ppDeviceFilter != nullptr);
+    assert(pMoniker != nullptr);
+    assert(inDeviceName != nullptr);
+
+    // 设备属性信息
+    IPropertyBag * pPropBag = NULL;
+    HRESULT hr = pMoniker->BindToStorage(0, 0, IID_IPropertyBag, (void **)&pPropBag);
+    if (SUCCEEDED(hr)) {
+        VARIANT var;
+        var.vt = VT_BSTR;
+        hr = pPropBag->Read(L"FriendlyName", &var, NULL);
+        if (hr != NOERROR) {
+            hr = pPropBag->Read(L"Description", &var, NULL);
+        }
+        if (hr == NOERROR) {
+            TCHAR deviceName[256] = { '\0' };
+            // 获取设备名称
+            int ret = string_utils::unicode_to_tchar(deviceName, sizeof(deviceName), var.bstrVal);
+            ::SysFreeString(var.bstrVal);
+            hr = E_FAIL;
+            if (inDeviceName != NULL && _tcscmp(inDeviceName, deviceName) == 0) {
+                ReleaseDeviceFilter(ppDeviceFilter);
+                // 尝试用当前设备绑定到 device filter
+                hr = pMoniker->BindToObject(0, 0, IID_IBaseFilter, (void **)ppDeviceFilter);
+                if (SUCCEEDED(hr) && ((ppDeviceFilter != NULL) && (*ppDeviceFilter != NULL))) {
+                    if (ppDeviceMoniker != nullptr) {
+                        *ppDeviceMoniker = pMoniker;
+                        pMoniker->AddRef();
+                    }
+                    hr = S_OK;
+                    if (pFilterGraph_ != nullptr) {
+                        // 将 Device filter 加入 filter graph
+                        IBaseFilter * pDeviceFilter = *ppDeviceFilter;
+                        hr = pFilterGraph_->AddFilter(pDeviceFilter, GetDeviceFilterName(isVideo));
+                        if (FAILED(hr)) {
+                            console.error(_T("Failed to add %s device filter to filter graph: %x"), GetDeviceType(isVideo), hr);
+                        }
+                    }
+                }
+                else {
+                    if (inDeviceName)
+                        console.error(_T("%s BindToObject Failed. index = %d, name = %s"),
+                                      GetDeviceType(isVideo), nIndex, inDeviceName);
+                    else
+                        console.error(_T("%s BindToObject Failed. index = %d, Moniker = %x"),
+                                      GetDeviceType(isVideo), nIndex, pMoniker);
+                    hr = E_FAIL;
+                }
+            }
+        }
+        pPropBag->Release();
+    }
+    return hr;
+}
+
+HRESULT CameraCapture::BindDeviceFilter(IBaseFilter ** ppDeviceFilter, IMoniker ** ppDeviceMoniker,
+                                        const TCHAR * inDeviceName, bool isVideo)
+{
+    if (inDeviceName == NULL)
+        return E_INVALIDARG;
+
+    REFCLSID CLSID_InputDeviceCategory = GetDeviceCategory(isVideo);
+
+    // 创建系统设备枚举
+    ICreateDevEnum * pCreateDevEnum = NULL;
+    HRESULT hr = CoCreateInstance(CLSID_SystemDeviceEnum, NULL, CLSCTX_INPROC_SERVER,
+                                  IID_ICreateDevEnum, (void**)&pCreateDevEnum);
+    if (FAILED(hr) || pCreateDevEnum == NULL) {
+        return E_FAIL;
+    }
+
+    // 创建一个指定视频采集设备的枚举
+    IEnumMoniker * pEnumMoniker = NULL;
+    hr = pCreateDevEnum->CreateClassEnumerator(CLSID_InputDeviceCategory, &pEnumMoniker, 0);
+    if (FAILED(hr) || pEnumMoniker == NULL) {
+        SAFE_COM_RELEASE(pCreateDevEnum);
+        return E_FAIL;
+    }
+
+    ULONG cFetched = 0;
+    int nIndex = 0;
+    IMoniker * pMoniker = NULL;
+
+    // 枚举设备
+    while (1) {
+        hr = pEnumMoniker->Next(1, &pMoniker, &cFetched);
+        if (hr == E_FAIL) {
+            break;
+        }
+        else if (hr == S_FALSE) {
+            console.error(_T("Unable to access %s capture device! index = %d"), GetDeviceType(isVideo), nIndex);
+            break;
+        }
+        else if (hr != S_OK) {
+            console.error(_T("Unable to access %s capture device! Error = %d"), GetDeviceType(isVideo), (int)hr);
+            break;
+        }
+        if (pMoniker != nullptr) {
+            hr = BindDeviceFilter(ppDeviceFilter, ppDeviceMoniker, nIndex, pMoniker, inDeviceName, isVideo);
+            pMoniker->Release();
+            pMoniker = NULL;
+        }
+        nIndex++;
+    }
+
+    pEnumMoniker->Release();
+    pCreateDevEnum->Release();
+    return hr;
+}
+
+// 根据选择的设备绑定 Video Capture Filter
+HRESULT CameraCapture::BindVideoFilter(const TCHAR * videoDevice)
+{
+    if (videoDevice == NULL)
+        return E_INVALIDARG;
+
+    HRESULT hr = BindDeviceFilter(&pVideoFilter_, &pVideoMoniker_, videoDevice, true);
+    return hr;
+}
+
+// 根据选择的设备绑定 Audio Capture Filter
+HRESULT CameraCapture::BindAudioFilter(const TCHAR * audioDevice)
+{
+    if (audioDevice == NULL)
+        return E_INVALIDARG;
+
+    HRESULT hr = BindDeviceFilter(&pAudioFilter_, &pAudioMoniker_, audioDevice, false);
+    return hr;
 }
 
 HRESULT CameraCapture::StartPreview()
@@ -722,24 +806,11 @@ bool CameraCapture::Render(int mode, TCHAR * videoPath,
 
     if (mode != MODE_LOCAL_VIDEO) {
         // 创建 Video filter
-        bool result = CreateVideoFilter(videoDevice);
-        if (!result)
-            return false;
-
-        // 将 Video filter 加入 filter graph
-        hr = pFilterGraph_->AddFilter(pVideoFilter_, L"Video Filter");
-        if (hr != NOERROR)
-            return false;
+        hr = BindVideoFilter(videoDevice);
 
         if (mode == MODE_RECORD_VIDEO) {
             // 创建 Audio filter
-            result = CreateAudioFilter(audioDevice);
-            if (result) {
-                // 将 Audio filter 加入 filter graph
-                hr = pFilterGraph_->AddFilter(pAudioFilter_, L"Audio Filter");
-                if (hr != NOERROR)
-                    return false;
-            }
+            hr = BindAudioFilter(audioDevice);
         }
     }
 

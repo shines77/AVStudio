@@ -1,5 +1,5 @@
 
-#include <DShow.h>
+#include <dshow.h>
 
 #if 0
 HRESULT WINAPI CopyMediaType(
@@ -20,5 +20,5 @@ void WINAPI FreeMediaType(AM_MEDIA_TYPE & mt);
 void WINAPI DeleteMediaType(AM_MEDIA_TYPE * pmt);
 #endif
 
-void _FreeMediaType(AM_MEDIA_TYPE & mt);
+void _FreeMediaType(AM_MEDIA_TYPE & mediaType);
 void _DeleteMediaType(AM_MEDIA_TYPE * pmt);
