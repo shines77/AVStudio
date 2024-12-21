@@ -77,7 +77,7 @@ BOOL CCameraHostDlg::Create(UINT nIDTemplate, HWND previewHwnd, CWnd * pParentWn
 	if (pCameraCapture_ == NULL) {
         pCameraCapture_ = new CCameraCapture;
         if (pCameraCapture_ != NULL) {
-            pCameraCapture_->CreateInterfaces();
+            pCameraCapture_->CreateEnv();
             if (previewHwnd != NULL) {
                 pCameraCapture_->SetPreviewHwnd(previewHwnd);
             }
@@ -104,8 +104,8 @@ BOOL CCameraHostDlg::OnInitDialog()
         EnumAudioDeviceList();
         EnumVideoDeviceList();
 
-        pCameraCapture_->ListVideoConfigures();
-        pCameraCapture_->ListAudioConfigures();
+        pCameraCapture_->EnumVideoConfigures();
+        pCameraCapture_->EnumAudioConfigures();
 
         inited_ = true;
         StartCapture();
@@ -118,7 +118,7 @@ int CCameraHostDlg::EnumAudioDeviceList()
 {
     int nDeviceCount = 0;
     if (pCameraCapture_ != NULL) {
-        nDeviceCount = pCameraCapture_->ListAudioDevices();
+        nDeviceCount = pCameraCapture_->EnumAudioDevices();
         cbxAudioDeviceList_.Clear();
         if (nDeviceCount > 0) {
             for (int i = 0; i < nDeviceCount; i++) {
@@ -136,7 +136,7 @@ int CCameraHostDlg::EnumVideoDeviceList()
 {
     int nDeviceCount = 0;
     if (pCameraCapture_ != NULL) {
-        nDeviceCount = pCameraCapture_->ListVideoDevices();
+        nDeviceCount = pCameraCapture_->ENumVideoDevices();
         cbxVideoDeviceList_.Clear();
         if (nDeviceCount > 0) {
             for (int i = 0; i < nDeviceCount; i++) {
@@ -288,7 +288,8 @@ LRESULT CCameraHostDlg::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
                     ::ShowWindow(hwndPreview, SW_HIDE);
                 }
                 // Stop capturing and release interfaces
-                pCameraCapture_->StopAndReleaseInterfaces();
+                HRESULT hr = pCameraCapture_->Stop();
+                pCameraCapture_->Release();
             }
             break;
     }

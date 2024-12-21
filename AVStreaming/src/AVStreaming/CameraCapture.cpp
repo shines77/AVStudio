@@ -37,15 +37,16 @@ CCameraCapture::CCameraCapture(HWND hwndPreview /* = NULL */)
 {
     hwndPreview_ = hwndPreview;
 
-    InitInterfaces();
+    InitEnv();
 }
 
 CCameraCapture::~CCameraCapture(void)
 {
-    StopAndReleaseInterfaces();
+    HRESULT hr = Stop();
+    Release();
 }
 
-void CCameraCapture::InitInterfaces()
+void CCameraCapture::InitEnv()
 {
     playState_ = PLAY_STATE::Unknown;
 
@@ -59,7 +60,7 @@ void CCameraCapture::InitInterfaces()
     pVideoMediaEvent_ = NULL;
 }
 
-void CCameraCapture::ReleaseInterfaces()
+void CCameraCapture::Release()
 {
     SAFE_COM_RELEASE(pVideoMux_);
     SAFE_COM_RELEASE(pVideoWindow_);
@@ -71,7 +72,7 @@ void CCameraCapture::ReleaseInterfaces()
     SAFE_COM_RELEASE(pFilterGraph_);
 }
 
-HRESULT CCameraCapture::CreateInterfaces()
+HRESULT CCameraCapture::CreateEnv()
 {
     HRESULT hr;
 
@@ -117,9 +118,9 @@ HRESULT CCameraCapture::CreateInterfaces()
     return hr;
 }
 
-HRESULT CCameraCapture::StopAndReleaseInterfaces()
+HRESULT CCameraCapture::Stop()
 {
-    HRESULT hr = S_OK;
+    HRESULT hr = E_FAIL;
 
     // Stop previewing data
     if (pVideoMediaControl_ != NULL) {
@@ -138,13 +139,11 @@ HRESULT CCameraCapture::StopAndReleaseInterfaces()
     // the video renderer, as it still assumes that it has a valid
     // parent window.
     if (pVideoWindow_ != NULL) {
-        pVideoWindow_->put_Visible(OAFALSE);
-        pVideoWindow_->put_Owner(NULL);
+        hr = pVideoWindow_->put_Visible(OAFALSE);
+        hr = pVideoWindow_->put_Owner(NULL);
     }
 
     hwndPreview_ = NULL;
-
-    ReleaseInterfaces();
     return hr;
 }
 
@@ -215,7 +214,7 @@ void CCameraCapture::ResizeVideoWindow(HWND hwndPreview /* = NULL */)
     }
 }
 
-int CCameraCapture::ListVideoConfigures()
+int CCameraCapture::EnumVideoConfigures()
 {
     int nConfigCount = 0;
     if (pCaptureBuilder_ != NULL && pVideoFilter_ != NULL) {
@@ -266,7 +265,7 @@ int CCameraCapture::ListVideoConfigures()
     return nConfigCount;
 }
 
-int CCameraCapture::ListAudioConfigures()
+int CCameraCapture::EnumAudioConfigures()
 {
     int nConfigCount = 0;
     if (pCaptureBuilder_ != NULL && pAudioFilter_ != NULL) {
@@ -316,7 +315,7 @@ int CCameraCapture::ListAudioConfigures()
 }
 
 // 枚举视频采集设备
-int CCameraCapture::ListVideoDevices()
+int CCameraCapture::ENumVideoDevices()
 {
     HRESULT hr;
 
@@ -401,7 +400,7 @@ int CCameraCapture::ListVideoDevices()
 }
 
 // 枚举音频采集设备
-int CCameraCapture::ListAudioDevices()
+int CCameraCapture::EnumAudioDevices()
 {
     HRESULT hr;
 
@@ -486,13 +485,13 @@ int CCameraCapture::ListAudioDevices()
 }
 
 // 枚举视频压缩格式
-int CCameraCapture::ListVideoCompressFormat()
+int CCameraCapture::EnumVideoCompressFormat()
 {
     return 0;
 }
 
 // 枚举音频压缩格式
-int CCameraCapture::ListAudioCompressFormat()
+int CCameraCapture::EnumAudioCompressFormat()
 {
     return 0;
 }
@@ -505,7 +504,8 @@ bool CCameraCapture::CreateVideoFilter(const char * videoDevice)
 
     // 创建系统设备枚举
     ICreateDevEnum * pCreateDevEnum = NULL;
-    HRESULT hr = CoCreateInstance(CLSID_SystemDeviceEnum, NULL, CLSCTX_INPROC_SERVER, IID_ICreateDevEnum, (void**)&pCreateDevEnum);
+    HRESULT hr = CoCreateInstance(CLSID_SystemDeviceEnum, NULL, CLSCTX_INPROC_SERVER,
+                                  IID_ICreateDevEnum, (void**)&pCreateDevEnum);
     if (FAILED(hr) || pCreateDevEnum == NULL) {
         return false;
     }
@@ -586,7 +586,8 @@ bool CCameraCapture::CreateAudioFilter(const char * audioDevice)
 
     // 创建系统设备枚举
     ICreateDevEnum * pCreateDevEnum = NULL;
-    HRESULT hr = CoCreateInstance(CLSID_SystemDeviceEnum, NULL, CLSCTX_INPROC_SERVER, IID_ICreateDevEnum, (void**)&pCreateDevEnum);
+    HRESULT hr = CoCreateInstance(CLSID_SystemDeviceEnum, NULL, CLSCTX_INPROC_SERVER,
+                                  IID_ICreateDevEnum, (void**)&pCreateDevEnum);
     if (FAILED(hr) || pCreateDevEnum == NULL) {
         return false;
     }
@@ -835,24 +836,37 @@ HRESULT CCameraCapture::ChangePreviewState(PLAY_STATE playState /* = PLAY_STATE:
 // 关闭摄像头
 bool CCameraCapture::StopCurrentOperating(int action_type)
 {
-    if (pVideoMediaControl_->Stop() < 0)
+    if (pVideoMediaControl_ == nullptr)
+        return false;
+
+    HRESULT hr = pVideoMediaControl_->Stop();
+    if (FAILED(hr))
         return false;
 
     if (action_type != ACTION_STOP_LOCAL_VIDEO) {
-        pVideoFilter_->Release();
-        pCaptureBuilder_->Release();
+        if (pVideoFilter_)
+            pVideoFilter_->Release();
+        if (pCaptureBuilder_)
+            pCaptureBuilder_->Release();
     }
 
-    pVideoWindow_->Release();
-    pVideoMediaControl_->Release();
-    pFilterGraph_->Release();
+    if (pVideoWindow_)
+        pVideoWindow_->Release();
+    if (pVideoMediaControl_)
+        pVideoMediaControl_->Release();
+    if (pFilterGraph_)
+        pFilterGraph_->Release();
     return true;
 }
 
 // 暂停播放本地视频
 bool CCameraCapture::PausePlayingLocalVideo()
 {
-    if (pVideoMediaControl_->Stop() < 0)
+    if (pVideoMediaControl_ == nullptr)
+        return false;
+
+    HRESULT hr = pVideoMediaControl_->Stop();
+    if (hr < 0)
         return false;
     else
         return true;
@@ -861,7 +875,11 @@ bool CCameraCapture::PausePlayingLocalVideo()
 // 继续播放本地视频
 bool CCameraCapture::ContinuePlayingLocalVideo()
 {
-    if (pVideoMediaControl_->Run() < 0)
+    if (pVideoMediaControl_ == nullptr)
+        return false;
+
+    HRESULT hr = pVideoMediaControl_->Run();
+    if (FAILED(hr))
         return false;
     else
         return true;

@@ -137,8 +137,9 @@ public:
         Paused
     };
 
-    HRESULT CreateInterfaces();
-    HRESULT StopAndReleaseInterfaces();
+    HRESULT CreateEnv();
+    HRESULT Stop();
+    void Release();
 
     HWND GetPreviewHwnd() const {
         return hwndPreview_;
@@ -160,20 +161,20 @@ public:
     void ResizeVideoWindow(HWND hwndPreview = NULL);
     bool AttachToVideoWindow(HWND hwndPreview);
 
-    int ListVideoConfigures();
-    int ListAudioConfigures();
+    int EnumVideoConfigures();
+    int EnumAudioConfigures();
 
     // 枚举视频采集设备, 返回设备数量
-    int ListVideoDevices();
+    int ENumVideoDevices();
 
     // 枚举音频采集设备
-    int ListAudioDevices();
+    int EnumAudioDevices();
 
     // 枚举视频压缩格式
-    int ListVideoCompressFormat();
+    int EnumVideoCompressFormat();
 
     // 枚举音频压缩格式
-    int ListAudioCompressFormat();
+    int EnumAudioCompressFormat();
 
     // 根据选择的设备创建 Video Capture Filter
     bool CreateVideoFilter(const char * videoDevice = NULL);
@@ -195,8 +196,7 @@ public:
     bool ContinuePlayingLocalVideo();
 
 protected:
-    void InitInterfaces();
-    void ReleaseInterfaces();
+    void InitEnv();
 
 private:
     HWND                    hwndPreview_;           // 预览窗口句柄
