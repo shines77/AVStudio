@@ -89,6 +89,14 @@ void CameraCapture::InitEnv()
     pAudioStreamConfig_ = NULL;
 
     pDroppedFrames_ = NULL;
+
+    previewGraphBuilt_ = false;
+    captureGraphBuilt_ = false;
+
+    wantPreview_ = false;
+    wantCapture_ = false;
+    isPreviewing_ = false;
+    isCapturing_ = false;
 }
 
 void CameraCapture::Release()
@@ -156,6 +164,16 @@ HRESULT CameraCapture::CreateEnv()
             return hr;
     }
     return hr;
+}
+
+HRESULT CameraCapture::InitCaptureFilters()
+{
+    return 0;
+}
+
+void CameraCapture::FreeCaptureFilters()
+{
+    //
 }
 
 //
@@ -233,6 +251,15 @@ void CameraCapture::TearDownGraph()
     if (pVideoFilter_ != nullptr) {
         //pCaptureBuilder_->ReleaseFilters();
     }
+}
+
+void CameraCapture::OnClose()
+{
+    // Destroy the filter graph and cleanup
+    StopPreview();
+    StopCapture();
+    TearDownGraph();
+    FreeCaptureFilters();
 }
 
 HRESULT CameraCapture::Stop()
@@ -431,12 +458,24 @@ size_t CameraCapture::EnumAudioConfigures()
     return nConfigCount;
 }
 
+void CameraCapture::ReleaseDeviceFilter(IBaseFilter ** ppFilter)
+{
+    assert(ppFilter != nullptr);
+    IBaseFilter * pFilter = *ppFilter;
+    if (pFilter != nullptr) {
+        RemoveDownstream(pFilter);
+        pFilter->Release();
+        //pFilter = nullptr;
+        ppFilter = nullptr;
+    }
+}
+
 size_t CameraCapture::EnumAVDevices(std::vector<std::tstring> & deviceList, bool isVideo)
 {
     // 创建系统设备枚举
     ICreateDevEnum * pCreateDevEnum = NULL;
     HRESULT hr = CoCreateInstance(CLSID_SystemDeviceEnum, NULL, CLSCTX_INPROC_SERVER,
-                                  IID_ICreateDevEnum, (void**)&pCreateDevEnum);
+                                  IID_ICreateDevEnum, (void **)&pCreateDevEnum);
     if (FAILED(hr) || pCreateDevEnum == NULL) {
         return hr;
     }
@@ -525,30 +564,6 @@ size_t CameraCapture::EnumVideoDevices()
 size_t CameraCapture::EnumAudioDevices()
 {
     return EnumAVDevices(audioDeviceList_, false);
-}
-
-// 枚举视频压缩格式
-size_t CameraCapture::EnumVideoCompressFormat()
-{
-    return 0;
-}
-
-// 枚举音频压缩格式
-size_t CameraCapture::EnumAudioCompressFormat()
-{
-    return 0;
-}
-
-void CameraCapture::ReleaseDeviceFilter(IBaseFilter ** ppFilter)
-{
-    assert(ppFilter != nullptr);
-    IBaseFilter * pFilter = *ppFilter;
-    if (pFilter != nullptr) {
-        RemoveDownstream(pFilter);
-        pFilter->Release();
-        //pFilter = nullptr;
-        ppFilter = nullptr;
-    }
 }
 
 HRESULT CameraCapture::BindDeviceFilter(IBaseFilter ** ppDeviceFilter, IMoniker ** ppDeviceMoniker,
@@ -688,39 +703,188 @@ HRESULT CameraCapture::BindAudioFilter(const TCHAR * audioDevice)
     return hr;
 }
 
+// 枚举视频压缩格式
+size_t CameraCapture::EnumVideoCompressFormat()
+{
+    return 0;
+}
+
+// 枚举音频压缩格式
+size_t CameraCapture::EnumAudioCompressFormat()
+{
+    return 0;
+}
+
 HRESULT CameraCapture::StartPreview()
 {
     HRESULT hr = E_FAIL;
+    if (isPreviewing_)
+        return S_OK;
 
-    //
+    if (!captureGraphBuilt_)
+        return E_FAIL;
 
+    // Run the filter graph
+    if (pFilterGraph_) {
+        IMediaControl * pMediaControl = NULL;
+        HRESULT hr = pFilterGraph_->QueryInterface(IID_IMediaControl, (void **)&pMediaControl);
+        if (SUCCEEDED(hr)) {
+            hr = pMediaControl->Run();
+            if (FAILED(hr)) {
+                // Stop parts that ran
+                pMediaControl->Stop();
+            }
+            pMediaControl->Release();
+        }
+        if (FAILED(hr)) {
+            console.error(_T("Error %x: Cannot run preview graph"), hr);
+            return hr;
+        }
+        isPreviewing_ = true;
+    }    
     return hr;
 }
 
 HRESULT CameraCapture::StopPreview()
 {
     HRESULT hr = E_FAIL;
+    if (!isPreviewing_)
+        return S_FALSE;
 
-    //
+    if (!captureGraphBuilt_)
+        return E_FAIL;
 
+    // Stop the filter graph
+    if (pFilterGraph_) {
+        IMediaControl * pMediaControl = NULL;
+        HRESULT hr = pFilterGraph_->QueryInterface(IID_IMediaControl, (void **)&pMediaControl);
+        if (SUCCEEDED(hr)) {
+            hr = pMediaControl->Stop();
+            pMediaControl->Release();
+        }
+        if (FAILED(hr)) {
+            console.error(_T("Error %x: Cannot stop preview graph"), hr);
+            return hr;
+        }
+        if (hwndPreview_ != NULL && ::IsWindow(hwndPreview_)) {
+            ::InvalidateRect(hwndPreview_, NULL, TRUE);
+        }
+        isPreviewing_ = false;
+    }
     return hr;
 }
 
 HRESULT CameraCapture::StartCapture()
 {
     HRESULT hr = E_FAIL;
+    if (isCapturing_)
+        return S_OK;
 
-    //
+    if (isPreviewing_)
+        StopPreview();
 
+    if (!captureGraphBuilt_)
+        return E_FAIL;
+
+    nDroppedBase_ = 0;
+    nNotDroppedBase_ = 0;
+
+    REFERENCE_TIME start = MAXLONGLONG, stop = MAXLONGLONG;
+    bool hasStreamControl = false;
+
+    // Don't capture quite yet...
+    if (pCaptureBuilder_) {
+        hr = pCaptureBuilder_->ControlStream(&PIN_CATEGORY_CAPTURE, NULL,
+                                             NULL, &start, NULL, 0, 0);
+        // Do we have the ability to control capture and preview separately?
+        hasStreamControl = SUCCEEDED(hr);
+
+        // Prepare to run the graph
+        if (pFilterGraph_) {
+            IMediaControl * pMediaControl = NULL;
+            hr = pFilterGraph_->QueryInterface(IID_IMediaControl, (void **)&pMediaControl);
+            if (FAILED(hr)) {
+                console.error(_T("Error %x: Cannot get capture IMediaControl"), hr);
+                return E_FAIL;
+            }
+
+            if (hasStreamControl)
+                hr = pMediaControl->Run();
+            else
+                hr = pMediaControl->Pause();
+            if (FAILED(hr)) {
+                // Stop parts that started
+                pMediaControl->Stop();
+                pMediaControl->Release();
+                console.error(_T("Error %x: Cannot start capture graph"), hr);
+                return E_FAIL;
+            }
+
+            // Start capture now !
+            if (hasStreamControl) {
+                // We may not have this yet
+                if (!pVideoFilter_ && !pDroppedFrames_) {
+                    hr = pCaptureBuilder_->FindInterface(&PIN_CATEGORY_CAPTURE,
+                                                         &MEDIATYPE_Interleaved, pVideoFilter_,
+                                                         IID_IAMDroppedFrames, (void **)&pDroppedFrames_);
+                    if (hr != NOERROR) {
+                        hr = pCaptureBuilder_->FindInterface(&PIN_CATEGORY_CAPTURE,
+                                                             &MEDIATYPE_Video, pVideoFilter_,
+                                                             IID_IAMDroppedFrames, (void **)&pDroppedFrames_);
+                    }
+                }
+
+                // Turn the capture pin on now!
+                hr = pCaptureBuilder_->ControlStream(&PIN_CATEGORY_CAPTURE, NULL,
+                                                     NULL, NULL, &stop, 0, 0);
+                // Make note of the current dropped frame counts
+                if (pDroppedFrames_) {
+                    pDroppedFrames_->GetNumDropped(&nDroppedBase_);
+                    pDroppedFrames_->GetNumNotDropped(&nNotDroppedBase_);
+                }
+            }
+            else {
+                hr = pMediaControl->Run();
+                if (FAILED(hr)) {
+                    // Stop parts that started
+                    pMediaControl->Stop();
+                    pMediaControl->Release();
+                    console.error(_T("Error %x: Cannot run capture graph"), hr);
+                    return E_FAIL;
+                }
+            }
+            pMediaControl->Release();
+        }
+    }
     return hr;
 }
 
 HRESULT CameraCapture::StopCapture()
 {
     HRESULT hr = E_FAIL;
+    if (!isCapturing_)
+        return S_FALSE;
 
-    //
+    if (!captureGraphBuilt_)
+        return E_FAIL;
 
+    // Stop the filter graph
+    if (pFilterGraph_) {
+        IMediaControl * pMediaControl = NULL;
+        HRESULT hr = pFilterGraph_->QueryInterface(IID_IMediaControl, (void **)&pMediaControl);
+        if (SUCCEEDED(hr)) {
+            hr = pMediaControl->Stop();
+            pMediaControl->Release();
+        }
+        if (FAILED(hr)) {
+            console.error(_T("Error %x: Cannot stop capture graph"), hr);
+            return hr;
+        }
+        if (hwndPreview_ != NULL && ::IsWindow(hwndPreview_)) {
+            ::InvalidateRect(hwndPreview_, NULL, TRUE);
+        }
+        isCapturing_ = false;
+    }
     return hr;
 }
 

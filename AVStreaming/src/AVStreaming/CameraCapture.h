@@ -142,7 +142,11 @@ public:
 
     HRESULT CreateEnv();
     HRESULT Stop();
+    void OnClose();
     void Release();
+
+    HRESULT InitCaptureFilters();
+    void FreeCaptureFilters();
 
     HWND GetPreviewHwnd() const {
         return hwndPreview_;
@@ -250,4 +254,16 @@ private:
 
     ISampleGrabber *        pVideoGrabber_;         // 视频抓取回调
     ISampleGrabber *        pAudioGrabber_;         // 音频抓取回调
+
+
+    bool    previewGraphBuilt_;
+    bool    captureGraphBuilt_;
+
+    bool    wantPreview_;
+    bool    wantCapture_;
+    bool    isPreviewing_;
+    bool    isCapturing_;
+
+    long    nDroppedBase_;
+    long    nNotDroppedBase_;
 };
