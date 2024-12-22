@@ -114,9 +114,9 @@ BOOL CCameraHostDlg::OnInitDialog()
 	return TRUE;  // 除非将焦点设置到控件，否则返回 TRUE
 }
 
-int CCameraHostDlg::EnumAudioDeviceList()
+size_t CCameraHostDlg::EnumAudioDeviceList()
 {
-    int nDeviceCount = 0;
+    size_t nDeviceCount = 0;
     if (pCameraCapture_ != NULL) {
         nDeviceCount = pCameraCapture_->EnumAudioDevices();
         cbxAudioDeviceList_.Clear();
@@ -131,9 +131,9 @@ int CCameraHostDlg::EnumAudioDeviceList()
     return nDeviceCount;
 }
 
-int CCameraHostDlg::EnumVideoDeviceList()
+size_t CCameraHostDlg::EnumVideoDeviceList()
 {
-    int nDeviceCount = 0;
+    size_t nDeviceCount = 0;
     if (pCameraCapture_ != NULL) {
         nDeviceCount = pCameraCapture_->EnumVideoDevices();
         cbxVideoDeviceList_.Clear();

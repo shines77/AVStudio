@@ -8,6 +8,7 @@
 #define __IDxtKey_INTERFACE_DEFINED__
 
 #include <qedit.h>      // For ISampleGrabber
+#include <stdint.h>
 #include <tchar.h>
 
 #include <string>
@@ -163,20 +164,22 @@ public:
     void ResizeVideoWindow(HWND hwndPreview = NULL);
     bool AttachToVideoWindow(HWND hwndPreview);
 
-    int EnumVideoConfigures();
-    int EnumAudioConfigures();
+    size_t EnumVideoConfigures();
+    size_t EnumAudioConfigures();
+
+    size_t EnumAVDevices(std::vector<std::tstring> & deviceList, bool isVideo);
 
     // 枚举视频采集设备, 返回设备数量
-    int EnumVideoDevices();
+    size_t EnumVideoDevices();
 
     // 枚举音频采集设备
-    int EnumAudioDevices();
+    size_t EnumAudioDevices();
 
     // 枚举视频压缩格式
-    int EnumVideoCompressFormat();
+    size_t EnumVideoCompressFormat();
 
     // 枚举音频压缩格式
-    int EnumAudioCompressFormat();
+    size_t EnumAudioCompressFormat();
 
     // 根据选择的设备绑定 Video Capture Filter
     HRESULT BindVideoFilter(const TCHAR * videoDevice);

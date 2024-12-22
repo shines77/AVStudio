@@ -7,6 +7,7 @@
 #include <AfxWin.h>
 #include <AfxDialogEx.h>
 
+#include <stdint.h>
 #include <string>
 
 #include "string_utils.h"
@@ -54,8 +55,8 @@ protected:
 	DECLARE_MESSAGE_MAP()
 
 protected:
-    int EnumVideoDeviceList();
-    int EnumAudioDeviceList();
+    size_t EnumVideoDeviceList();
+    size_t EnumAudioDeviceList();
 
 private:
     HWND            hwndPreview_;
