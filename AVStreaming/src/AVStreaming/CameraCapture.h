@@ -188,6 +188,11 @@ public:
     // 枚举音频压缩格式
     size_t EnumAudioCompressFormat();
 
+    void ChooseDevices(const TCHAR * videoDevice,
+                       const TCHAR * audioDevice);
+    void ChooseDevices(IMoniker * pVideoMoniker,
+                       IMoniker * pAudioMoniker);
+
     // 根据选择的设备绑定 Video Capture Filter
     HRESULT BindVideoFilter(const TCHAR * videoDevice);
     // 根据选择的设备绑定 Audio Capture Filter

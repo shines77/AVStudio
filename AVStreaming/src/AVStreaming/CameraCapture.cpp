@@ -178,7 +178,88 @@ HRESULT CameraCapture::InitCaptureFilters()
 
 void CameraCapture::FreeCaptureFilters()
 {
+
+}
+
+void CameraCapture::ChooseDevices(IMoniker * pVideoMoniker,
+                                  IMoniker * pAudioMoniker)
+{
     //
+}
+
+void CameraCapture::ChooseDevices(const TCHAR * videoDevice,
+                                  const TCHAR * audioDevice)
+{
+    WCHAR szVideoDevice[1024], szAudioDevice[1024];
+
+    szVideoDevice[0] = szAudioDevice[0] = 0;
+    if (videoDevice) {
+        StringCchCopyN(szVideoDevice, NUMELMS(szVideoDevice), videoDevice, NUMELMS(szVideoDevice) - 1);
+    }
+    if (videoDevice) {
+        StringCchCopyN(szAudioDevice, NUMELMS(szAudioDevice), audioDevice, NUMELMS(szAudioDevice) - 1);
+    }
+    // Null-terminate
+    szVideoDevice[1023] = szAudioDevice[1023] = 0;
+
+    // Handle the case where the video capture device used for the previous session
+    // is not available now.
+    BOOL bVideoFound = FALSE;
+
+    if (videoDevice != nullptr) {
+        for (size_t i = 0; i < videoDeviceList_.size(); i++) {
+            std::tstring name = videoDeviceList_[i];
+            if (_tcscmp(szVideoDevice, name.c_str()) == 0) {
+                bVideoFound = TRUE;
+                break;
+            }
+        }
+    }
+
+    if (!bVideoFound) {
+        if (videoDeviceList_.size() > 0) {
+            StringCchCopyN(szVideoDevice, NUMELMS(szVideoDevice),
+                           videoDeviceList_[0].c_str(), NUMELMS(szVideoDevice) - 1);
+        }
+    }
+
+    // Handle the case where the video capture device used for the previous session
+    // is not available now.
+    BOOL bAudioFound = FALSE;
+
+    if (videoDevice != nullptr) {
+        for (size_t i = 0; i < audioDeviceList_.size(); i++) {
+            std::tstring name = audioDeviceList_[i];
+            if (_tcscmp(szVideoDevice, name.c_str()) == 0) {
+                bAudioFound = TRUE;
+                break;
+            }
+        }
+    }
+
+    if (!bAudioFound) {
+        if (audioDeviceList_.size() > 0) {
+            StringCchCopyN(szAudioDevice, NUMELMS(szAudioDevice),
+                           audioDeviceList_[0].c_str(), NUMELMS(szAudioDevice) - 1);
+        }
+    }
+
+    IBindCtx * pBindCtx = NULL;
+    IMoniker * pVideoMoniker = NULL;
+    IMoniker * pAudioMoniker = NULL;
+
+    HRESULT hr = CreateBindCtx(0, &pBindCtx);
+    if (SUCCEEDED(hr)) {
+        DWORD dwEaten;
+        hr = MkParseDisplayName(pBindCtx, szVideoDevice, &dwEaten, &pVideoMoniker);
+        hr = MkParseDisplayName(pBindCtx, szAudioDevice, &dwEaten, &pAudioMoniker);
+        pBindCtx->Release();
+    }
+
+    ChooseDevices(pVideoMoniker, pAudioMoniker);
+
+    SAFE_COM_RELEASE(pVideoMoniker);
+    SAFE_COM_RELEASE(pAudioMoniker);
 }
 
 //
