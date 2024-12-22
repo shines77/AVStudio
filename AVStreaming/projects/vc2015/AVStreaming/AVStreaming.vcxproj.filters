@@ -24,9 +24,6 @@
     <ClInclude Include="..\..\..\src\AVStreaming\AVStreamingDlg.h">
       <Filter>src</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\src\AVStreaming\Mtype.h">
-      <Filter>src</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\..\src\AVStreaming\Resource.h">
       <Filter>src</Filter>
     </ClInclude>
@@ -72,6 +69,21 @@
     <ClInclude Include="..\..\..\src\AVStreaming\global.h">
       <Filter>src</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\src\AVStreaming\AudioCaptureCB.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\AVStreaming\VideoCaptureCB.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\AVStreaming\AVConsole.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\AVStreaming\dshowutil.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\AVStreaming\SmartPtr.h">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\..\src\AVStreaming\stdafx.cpp">
@@ -81,9 +93,6 @@
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\src\AVStreaming\AVStreamingDlg.cpp">
-      <Filter>src</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\src\AVStreaming\Mtype.cpp">
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\src\AVStreaming\utils.cpp">

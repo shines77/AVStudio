@@ -148,6 +148,8 @@ public:
     HRESULT InitCaptureFilters();
     void FreeCaptureFilters();
 
+    HRESULT BuildPreviewGraph();
+
     HWND GetPreviewHwnd() const {
         return hwndPreview_;
     }
@@ -166,6 +168,7 @@ public:
     HRESULT HandleGraphEvent(void);
 
     void ResizeVideoWindow(HWND hwndPreview = NULL);
+    void ResizeVideoWindow(long nWidth, long nHeight);
     bool AttachToVideoWindow(HWND hwndPreview);
 
     size_t EnumVideoConfigures();
@@ -263,6 +266,7 @@ private:
     bool    wantCapture_;
     bool    isPreviewing_;
     bool    isCapturing_;
+    bool    isPreviewFaked_;
 
     long    nDroppedBase_;
     long    nNotDroppedBase_;

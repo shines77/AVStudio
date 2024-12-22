@@ -121,7 +121,7 @@
       <AdditionalLibraryDirectories>$(SolutionDir)lib;.\lib;C:\Program Files (x86)\Visual Leak Detector\lib\Win32;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
-      <UACExecutionLevel>HighestAvailable</UACExecutionLevel>
+      <UACExecutionLevel>AsInvoker</UACExecutionLevel>
       <AdditionalDependencies>avcodec.lib;avdevice.lib;avfilter.lib;avformat.lib;avutil.lib;swscale.lib;swresample.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Midl>
@@ -151,7 +151,7 @@
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
       <AdditionalLibraryDirectories>$(SolutionDir)lib;.\lib;C:\Program Files (x86)\Visual Leak Detector\lib\Win64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>avcodec.lib;avdevice.lib;avfilter.lib;avformat.lib;avutil.lib;swscale.lib;swresample.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <UACExecutionLevel>HighestAvailable</UACExecutionLevel>
+      <UACExecutionLevel>AsInvoker</UACExecutionLevel>
       <UACUIAccess>false</UACUIAccess>
     </Link>
     <Midl>
@@ -184,7 +184,7 @@
       <AdditionalLibraryDirectories>$(SolutionDir)lib;.\lib;C:\Program Files (x86)\Visual Leak Detector\lib\Win32;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
-      <UACExecutionLevel>HighestAvailable</UACExecutionLevel>
+      <UACExecutionLevel>AsInvoker</UACExecutionLevel>
       <AdditionalDependencies>avcodec.lib;avdevice.lib;avfilter.lib;avformat.lib;avutil.lib;swscale.lib;swresample.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Midl>
@@ -218,7 +218,7 @@
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
       <AdditionalLibraryDirectories>$(SolutionDir)lib;.\lib;C:\Program Files (x86)\Visual Leak Detector\lib\Win64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>avcodec.lib;avdevice.lib;avfilter.lib;avformat.lib;avutil.lib;swscale.lib;swresample.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <UACExecutionLevel>HighestAvailable</UACExecutionLevel>
+      <UACExecutionLevel>AsInvoker</UACExecutionLevel>
       <UACUIAccess>false</UACUIAccess>
     </Link>
     <Midl>
@@ -236,17 +236,20 @@
     <Text Include="ReadMe.txt" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\..\src\AVStreaming\AudioCaptureCB.h" />
+    <ClInclude Include="..\..\..\src\AVStreaming\AVConsole.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\AVStreaming.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\AVStreamingDlg.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\CameraHostDlg.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\CmdParser.h" />
+    <ClInclude Include="..\..\..\src\AVStreaming\dshowutil.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\fAllocator.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\fSmartPtr.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\global.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\macros.h" />
-    <ClInclude Include="..\..\..\src\AVStreaming\Mtype.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\PreviewWnd.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\Resource.h" />
+    <ClInclude Include="..\..\..\src\AVStreaming\SmartPtr.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\stdafx.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\StopWatch.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\string_utils.h" />
@@ -254,13 +257,13 @@
     <ClInclude Include="..\..\..\src\AVStreaming\targetver.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\CameraCapture.h" />
     <ClInclude Include="..\..\..\src\AVStreaming\utils.h" />
+    <ClInclude Include="..\..\..\src\AVStreaming\VideoCaptureCB.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\..\src\AVStreaming\AVStreaming.cpp" />
     <ClCompile Include="..\..\..\src\AVStreaming\AVStreamingDlg.cpp" />
     <ClCompile Include="..\..\..\src\AVStreaming\CameraHostDlg.cpp" />
     <ClCompile Include="..\..\..\src\AVStreaming\global.cpp" />
-    <ClCompile Include="..\..\..\src\AVStreaming\Mtype.cpp" />
     <ClCompile Include="..\..\..\src\AVStreaming\PreviewWnd.cpp" />
     <ClCompile Include="..\..\..\src\AVStreaming\stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>

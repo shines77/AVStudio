@@ -7,13 +7,16 @@
 #endif
 #include <windows.h>
 
+#include <atlcomcli.h>      // For CComPtr<T>
 #include <atlconv.h>
 #include <assert.h>
+
+#include "DShowUtil.h"
+#include "SmartPtr.h"       // For SmartPtr<T>
 
 #include "macros.h"
 #include "global.h"
 #include "utils.h"
-#include "Mtype.h"
 
 #include "string_utils.h"
 #include "fAllocator.h"
@@ -97,6 +100,8 @@ void CameraCapture::InitEnv()
     wantCapture_ = false;
     isPreviewing_ = false;
     isCapturing_ = false;
+
+    isPreviewFaked_ = false;
 }
 
 void CameraCapture::Release()
@@ -262,6 +267,120 @@ void CameraCapture::OnClose()
     FreeCaptureFilters();
 }
 
+int GetStatusHeight()
+{
+    return 0;
+}
+
+// build the preview graph!
+HRESULT CameraCapture::BuildPreviewGraph()
+{
+    HRESULT hr;
+
+    // We have one already
+    if(previewGraphBuilt_)
+        return S_FALSE;
+
+    // No rebuilding while we're running
+    if (isCapturing_ || isPreviewing_)
+        return S_FALSE;
+
+    // We don't have the necessary capture filters
+    if(pVideoFilter_ == NULL)
+        return S_FALSE;
+
+    if(pAudioFilter_ == NULL)
+        return S_FALSE;
+    
+    // We already have another graph built ... tear down the old one
+    if (captureGraphBuilt_)
+        TearDownGraph();
+
+    if (pCaptureBuilder_) {
+        hr = pCaptureBuilder_->RenderStream(&PIN_CATEGORY_PREVIEW,
+                                            &MEDIATYPE_Interleaved, pVideoFilter_, NULL, NULL);
+        if (hr == VFW_S_NOPREVIEWPIN) {
+            // Preview was faked up for us using the (only) capture pin
+            isPreviewFaked_ = true;
+        }
+        else if (hr != S_OK) {
+            // Maybe it's DV?
+            hr = pCaptureBuilder_->RenderStream(&PIN_CATEGORY_PREVIEW,
+                                                &MEDIATYPE_Video, pVideoFilter_, NULL, NULL);
+            if (hr == VFW_S_NOPREVIEWPIN) {
+                // Preview was faked up for us using the (only) capture pin
+                isPreviewFaked_ = true;
+            }
+            else if (hr != S_OK) {
+                console.error(_T("This graph cannot preview!"));
+                previewGraphBuilt_ = false;
+                return S_FALSE;
+            }
+        }
+    }
+
+    //
+    // Get the preview window to be a child of our app's window
+    //
+
+    // This will find the IVideoWindow interface on the renderer.  It is
+    // important to ask the filtergraph for this interface... do NOT use
+    // ICaptureGraphBuilder2::FindInterface, because the filtergraph needs to
+    // know we own the window so it can give us display changed messages, etc.
+
+    if (pFilterGraph_) {
+        hr = pFilterGraph_->QueryInterface(IID_IVideoWindow, (void **)&pVideoWindow_);
+        if (hr != NOERROR) {
+            console.error(_T("This graph cannot preview properly"));
+        }
+        else {
+            // Find out if this is a DV stream
+            AM_MEDIA_TYPE * pmtDV = NULL;
+            if (pVideoStreamConfig_ && SUCCEEDED(pVideoStreamConfig_->GetFormat(&pmtDV))) {
+                if (pmtDV->formattype == FORMAT_DvInfo) {
+                    // In this case we want to set the size of the parent window to that of
+                    // current DV resolution.
+                    // We get that resolution from the IVideoWindow.
+                    SmartPtr<IBasicVideo> pBasicVideo;
+
+				    // If we got here, pVideoWindow_ is not NULL 
+				    ASSERT(pVideoWindow_ != NULL);
+				    hr = pVideoWindow_->QueryInterface(IID_IBasicVideo, (void**)&pBasicVideo);
+
+                    if (SUCCEEDED(hr)) {
+                        HRESULT hr1, hr2;
+                        long lWidth, lHeight;
+
+                        hr1 = pBasicVideo->get_VideoHeight(&lHeight);
+                        hr2 = pBasicVideo->get_VideoWidth(&lWidth);
+                        if (SUCCEEDED(hr1) && SUCCEEDED(hr2)) {
+                            ResizeVideoWindow(lWidth, abs(lHeight));
+                        }
+                    }
+                }
+            }
+
+            if (hwndPreview_ != NULL && ::IsWindow(hwndPreview_)) {
+                CRect rc;
+                pVideoWindow_->put_Owner((OAHWND)hwndPreview_); // We own the window now
+                pVideoWindow_->put_WindowStyle(WS_CHILD);       // you are now a child
+
+                // Give the preview window all our space but where the status bar is
+                GetClientRect(hwndPreview_, &rc);
+                int cyBorder = GetSystemMetrics(SM_CYBORDER);
+                int cy = GetStatusHeight() + cyBorder;
+                rc.bottom -= cy;
+
+                pVideoWindow_->SetWindowPosition(0, 0, rc.right, rc.bottom); // be this big
+                pVideoWindow_->put_Visible(OATRUE);
+            }
+        }
+    }
+
+    previewGraphBuilt_ = true;
+    return hr;
+}
+
 HRESULT CameraCapture::Stop()
 {
     HRESULT hr = E_FAIL;
@@ -352,8 +471,23 @@ void CameraCapture::ResizeVideoWindow(HWND hwndPreview /* = NULL */)
         if (hwndPreview != NULL && ::IsWindow(hwndPreview)) {
             CRect rc;
             ::GetClientRect(hwndPreview, &rc);
-            // ÈÃÍ¼Ïñ³äÂúÕû¸ö´°¿Ú
             pVideoWindow_->SetWindowPosition(0, 0, rc.right, rc.bottom);
+        }
+    }
+}
+
+void CameraCapture::ResizeVideoWindow(long nWidth, long nHeight)
+{
+    HWND hwndPreview = hwndPreview_;
+
+    if (pVideoWindow_ != NULL) {
+        if (hwndPreview != NULL && ::IsWindow(hwndPreview)) {
+            BOOL result = ::MoveWindow(hwndPreview, 0, 0, nWidth, nHeight, TRUE);
+            if (result) {
+                CRect rc;
+                ::GetClientRect(hwndPreview, &rc);
+                pVideoWindow_->SetWindowPosition(0, 0, rc.right, rc.bottom);
+            }
         }
     }
 }
@@ -854,6 +988,10 @@ HRESULT CameraCapture::StartCapture()
                 }
             }
             pMediaControl->Release();
+
+            if (wantPreview_)
+                isPreviewing_ = true;
+            isCapturing_ = true;
         }
     }
     return hr;
