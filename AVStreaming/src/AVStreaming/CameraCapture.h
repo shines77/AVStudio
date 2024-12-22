@@ -196,8 +196,8 @@ public:
     HRESULT StartPreview();
     HRESULT StopPreview();
 
-    HRESULT StartCapture();
-    HRESULT StopCapture();
+    HRESULT StartDShowCapture();
+    HRESULT StopDShowCapture();
 
     // ‰÷»æ‘§¿¿¥∞ø⁄
     bool Render(int mode, TCHAR * videoPath = NULL,

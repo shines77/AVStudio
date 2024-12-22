@@ -262,7 +262,7 @@ void CameraCapture::OnClose()
 {
     // Destroy the filter graph and cleanup
     StopPreview();
-    StopCapture();
+    StopDShowCapture();
     TearDownGraph();
     FreeCaptureFilters();
 }
@@ -278,7 +278,7 @@ HRESULT CameraCapture::BuildPreviewGraph()
     HRESULT hr;
 
     // We have one already
-    if(previewGraphBuilt_)
+    if (previewGraphBuilt_)
         return S_FALSE;
 
     // No rebuilding while we're running
@@ -286,10 +286,10 @@ HRESULT CameraCapture::BuildPreviewGraph()
         return S_FALSE;
 
     // We don't have the necessary capture filters
-    if(pVideoFilter_ == NULL)
+    if (pVideoFilter_ == NULL)
         return S_FALSE;
 
-    if(pAudioFilter_ == NULL)
+    if (pAudioFilter_ == NULL)
         return S_FALSE;
     
     // We already have another graph built ... tear down the old one
@@ -324,8 +324,8 @@ HRESULT CameraCapture::BuildPreviewGraph()
     //
 
     // This will find the IVideoWindow interface on the renderer.  It is
-    // important to ask the filtergraph for this interface... do NOT use
-    // ICaptureGraphBuilder2::FindInterface, because the filtergraph needs to
+    // important to ask the filter graph for this interface... do NOT use
+    // ICaptureGraphBuilder2::FindInterface, because the filter graph needs to
     // know we own the window so it can give us display changed messages, etc.
 
     if (pFilterGraph_) {
@@ -334,79 +334,58 @@ HRESULT CameraCapture::BuildPreviewGraph()
             console.error(_T("This graph cannot preview properly"));
         }
         else {
-            // Find out if this is a DV stream
-            AM_MEDIA_TYPE * pmtDV = NULL;
-            if (pVideoStreamConfig_ && SUCCEEDED(pVideoStreamConfig_->GetFormat(&pmtDV))) {
-                if (pmtDV->formattype == FORMAT_DvInfo) {
-                    // In this case we want to set the size of the parent window to that of
-                    // current DV resolution.
-                    // We get that resolution from the IVideoWindow.
-                    SmartPtr<IBasicVideo> pBasicVideo;
+            // If we got here, pVideoWindow_ is not NULL
+            ASSERT(pVideoWindow_ != NULL);
+            hr = E_FAIL;
+            if (hwndPreview_ != NULL && ::IsWindow(hwndPreview_)) {
+                // Find out if this is a DV stream
+                AM_MEDIA_TYPE * pmtDV = NULL;
+                if (pVideoStreamConfig_ && SUCCEEDED(pVideoStreamConfig_->GetFormat(&pmtDV))) {
+                    if (pmtDV->formattype == FORMAT_DvInfo) {
+                        // In this case we want to set the size of the parent window to that of
+                        // current DV resolution.
+                        // We get that resolution from the IVideoWindow.
+                        SmartPtr<IBasicVideo> pBasicVideo;
 
-				    // If we got here, pVideoWindow_ is not NULL 
-				    ASSERT(pVideoWindow_ != NULL);
-				    hr = pVideoWindow_->QueryInterface(IID_IBasicVideo, (void**)&pBasicVideo);
+				        hr = pVideoWindow_->QueryInterface(IID_IBasicVideo, (void**)&pBasicVideo);
+                        if (SUCCEEDED(hr)) {
+                            HRESULT hr1, hr2;
+                            long lWidth, lHeight;
 
-                    if (SUCCEEDED(hr)) {
-                        HRESULT hr1, hr2;
-                        long lWidth, lHeight;
-
-                        hr1 = pBasicVideo->get_VideoHeight(&lHeight);
-                        hr2 = pBasicVideo->get_VideoWidth(&lWidth);
-                        if (SUCCEEDED(hr1) && SUCCEEDED(hr2)) {
-                            ResizeVideoWindow(lWidth, abs(lHeight));
+                            hr1 = pBasicVideo->get_VideoHeight(&lHeight);
+                            hr2 = pBasicVideo->get_VideoWidth(&lWidth);
+                            if (SUCCEEDED(hr1) && SUCCEEDED(hr2)) {
+                                ResizeVideoWindow(lWidth, abs(lHeight));
+                            }
                         }
                     }
                 }
-            }
 
-            if (hwndPreview_ != NULL && ::IsWindow(hwndPreview_)) {
                 CRect rc;
-                pVideoWindow_->put_Owner((OAHWND)hwndPreview_); // We own the window now
-                pVideoWindow_->put_WindowStyle(WS_CHILD);       // you are now a child
+                // We own the window now
+                hr = pVideoWindow_->put_Owner((OAHWND)hwndPreview_);
+                // you are now a child
+                hr = pVideoWindow_->put_WindowStyle(WS_CHILD | WS_CLIPCHILDREN);
 
                 // Give the preview window all our space but where the status bar is
                 GetClientRect(hwndPreview_, &rc);
                 int cyBorder = GetSystemMetrics(SM_CYBORDER);
                 int cy = GetStatusHeight() + cyBorder;
-                rc.bottom -= cy;
+                //rc.bottom -= cy;
 
-                pVideoWindow_->SetWindowPosition(0, 0, rc.right, rc.bottom); // be this big
-                pVideoWindow_->put_Visible(OATRUE);
+                hr = pVideoWindow_->SetWindowPosition(0, 0, rc.right, rc.bottom); // be this big
+                hr = pVideoWindow_->put_Visible(OATRUE);
+
+                // Make sure we process events while we're previewing!
+                hr = pFilterGraph_->QueryInterface(IID_IMediaEventEx, (void **)&pVideoMediaEvent_);
+                if (hr == NOERROR) {
+                    hr = pVideoMediaEvent_->SetNotifyWindow((OAHWND)hwndPreview_, WM_GRAPH_NOTIFY, 0);
+                }
             }
         }
     }
 
     previewGraphBuilt_ = true;
-    return hr;
-}
-
-HRESULT CameraCapture::Stop()
-{
-    HRESULT hr = E_FAIL;
-
-    // Stop previewing data
-    if (pVideoMediaControl_ != nullptr) {
-        hr = pVideoMediaControl_->StopWhenReady();
-    }
-
-    playState_ = PLAY_STATE::Stopped;
-
-    // Stop receiving events
-    if (pVideoMediaEvent_ != nullptr) {
-        hr = pVideoMediaEvent_->SetNotifyWindow(NULL, WM_GRAPH_NOTIFY, 0);
-    }
-
-    // Relinquish ownership (IMPORTANT!) of the video window.
-    // Failing to call put_Owner can lead to assert failures within
-    // the video renderer, as it still assumes that it has a valid
-    // parent window.
-    if (pVideoWindow_ != nullptr) {
-        hr = pVideoWindow_->put_Visible(OAFALSE);
-        hr = pVideoWindow_->put_Owner(NULL);
-    }
-
-    hwndPreview_ = NULL;
     return hr;
 }
 
@@ -430,7 +409,6 @@ bool CameraCapture::AttachToVideoWindow(HWND hwndPreview)
         HRESULT hr;
 
         // Set the video window to be a child of the main window
-        // 视频流放入 "Picture控件" 中来预览视频
         hr = pVideoWindow_->put_Owner((OAHWND)hwndPreview);
         if (FAILED(hr))
             return false;
@@ -479,15 +457,10 @@ void CameraCapture::ResizeVideoWindow(HWND hwndPreview /* = NULL */)
 void CameraCapture::ResizeVideoWindow(long nWidth, long nHeight)
 {
     HWND hwndPreview = hwndPreview_;
-
-    if (pVideoWindow_ != NULL) {
-        if (hwndPreview != NULL && ::IsWindow(hwndPreview)) {
-            BOOL result = ::MoveWindow(hwndPreview, 0, 0, nWidth, nHeight, TRUE);
-            if (result) {
-                CRect rc;
-                ::GetClientRect(hwndPreview, &rc);
-                pVideoWindow_->SetWindowPosition(0, 0, rc.right, rc.bottom);
-            }
+    if (hwndPreview != NULL && ::IsWindow(hwndPreview)) {
+        BOOL result = ::MoveWindow(hwndPreview, 0, 0, nWidth, nHeight, TRUE);
+        if (result) {
+            ResizeVideoWindow(hwndPreview);
         }
     }
 }
@@ -592,18 +565,6 @@ size_t CameraCapture::EnumAudioConfigures()
     return nConfigCount;
 }
 
-void CameraCapture::ReleaseDeviceFilter(IBaseFilter ** ppFilter)
-{
-    assert(ppFilter != nullptr);
-    IBaseFilter * pFilter = *ppFilter;
-    if (pFilter != nullptr) {
-        RemoveDownstream(pFilter);
-        pFilter->Release();
-        //pFilter = nullptr;
-        ppFilter = nullptr;
-    }
-}
-
 size_t CameraCapture::EnumAVDevices(std::vector<std::tstring> & deviceList, bool isVideo)
 {
     // 创建系统设备枚举
@@ -688,16 +649,16 @@ size_t CameraCapture::EnumAVDevices(std::vector<std::tstring> & deviceList, bool
     return deviceList.size();
 }
 
-// 枚举视频采集设备
-size_t CameraCapture::EnumVideoDevices()
+void CameraCapture::ReleaseDeviceFilter(IBaseFilter ** ppFilter)
 {
-    return EnumAVDevices(videoDeviceList_, true);
-}
-
-// 枚举音频采集设备
-size_t CameraCapture::EnumAudioDevices()
-{
-    return EnumAVDevices(audioDeviceList_, false);
+    assert(ppFilter != nullptr);
+    IBaseFilter * pFilter = *ppFilter;
+    if (pFilter != nullptr) {
+        RemoveDownstream(pFilter);
+        pFilter->Release();
+        //pFilter = nullptr;
+        ppFilter = nullptr;
+    }
 }
 
 HRESULT CameraCapture::BindDeviceFilter(IBaseFilter ** ppDeviceFilter, IMoniker ** ppDeviceMoniker,
@@ -817,6 +778,18 @@ HRESULT CameraCapture::BindDeviceFilter(IBaseFilter ** ppDeviceFilter, IMoniker 
     return hr;
 }
 
+// 枚举视频采集设备
+size_t CameraCapture::EnumVideoDevices()
+{
+    return EnumAVDevices(videoDeviceList_, true);
+}
+
+// 枚举音频采集设备
+size_t CameraCapture::EnumAudioDevices()
+{
+    return EnumAVDevices(audioDeviceList_, false);
+}
+
 // 根据选择的设备绑定 Video Capture Filter
 HRESULT CameraCapture::BindVideoFilter(const TCHAR * videoDevice)
 {
@@ -908,7 +881,36 @@ HRESULT CameraCapture::StopPreview()
     return hr;
 }
 
-HRESULT CameraCapture::StartCapture()
+HRESULT CameraCapture::Stop()
+{
+    HRESULT hr = E_FAIL;
+
+    // Stop previewing data
+    if (pVideoMediaControl_ != nullptr) {
+        hr = pVideoMediaControl_->StopWhenReady();
+    }
+
+    playState_ = PLAY_STATE::Stopped;
+
+    // Stop receiving events
+    if (pVideoMediaEvent_ != nullptr) {
+        hr = pVideoMediaEvent_->SetNotifyWindow(NULL, WM_GRAPH_NOTIFY, 0);
+    }
+
+    // Relinquish ownership (IMPORTANT!) of the video window.
+    // Failing to call put_Owner can lead to assert failures within
+    // the video renderer, as it still assumes that it has a valid
+    // parent window.
+    if (pVideoWindow_ != nullptr) {
+        hr = pVideoWindow_->put_Visible(OAFALSE);
+        hr = pVideoWindow_->put_Owner(NULL);
+    }
+
+    hwndPreview_ = NULL;
+    return hr;
+}
+
+HRESULT CameraCapture::StartDShowCapture()
 {
     HRESULT hr = E_FAIL;
     if (isCapturing_)
@@ -997,7 +999,7 @@ HRESULT CameraCapture::StartCapture()
     return hr;
 }
 
-HRESULT CameraCapture::StopCapture()
+HRESULT CameraCapture::StopDShowCapture()
 {
     HRESULT hr = E_FAIL;
     if (!isCapturing_)
