@@ -62,7 +62,7 @@ CameraCapture::CameraCapture(HWND hwndPreview /* = NULL */)
 
 CameraCapture::~CameraCapture(void)
 {
-    HRESULT hr = Stop();
+    HRESULT hr = Close();
     Release();
 }
 
@@ -84,8 +84,14 @@ void CameraCapture::InitEnv()
     pVideoMoniker_ = NULL;
     pAudioMoniker_ = NULL;
 
-    pVideoGrabber_ = NULL;
-    pAudioGrabber_ = NULL;
+    pVideoGrabberFilter_ = NULL;
+    pAudioGrabberFilter_ = NULL;
+
+    pVideoSampleGrabber_ = NULL;
+    pAudioSampleGrabber_ = NULL;
+
+    pVideoCaptureCallback_ = NULL;
+    pAudioCaptureCallback_ = NULL;
 
     pVideoCompression_ = NULL;
 
@@ -118,8 +124,8 @@ void CameraCapture::Release()
     SAFE_COM_RELEASE(pVideoMoniker_);
     SAFE_COM_RELEASE(pAudioMoniker_);
 
-    SAFE_COM_RELEASE(pVideoGrabber_);
-    SAFE_COM_RELEASE(pAudioGrabber_);
+    SAFE_COM_RELEASE(pVideoSampleGrabber_);
+    SAFE_COM_RELEASE(pAudioSampleGrabber_);
 
     SAFE_COM_RELEASE(pFilterGraph_);
     SAFE_COM_RELEASE(pCaptureBuilder_);
@@ -143,11 +149,13 @@ HRESULT CameraCapture::CreateEnv()
     if (FAILED(hr))
         return hr;
 
+#if 0
     // 创建视频播放窗口
     SAFE_COM_RELEASE(pVideoWindow_);
     hr = pFilterGraph_->QueryInterface(IID_IVideoWindow, (void **)&pVideoWindow_);
     if (FAILED(hr))
         return hr;
+#endif
 
     playState_ = PLAY_STATE::Unknown;
 
@@ -169,6 +177,12 @@ HRESULT CameraCapture::CreateEnv()
         if (FAILED(hr))
             return hr;
     }
+
+    SAFE_OBJECT_DELETE(pVideoCaptureCallback_);
+    pVideoCaptureCallback_ = new VideoCaptureCB;
+
+    SAFE_OBJECT_DELETE(pAudioCaptureCallback_);
+    pAudioCaptureCallback_ = new AudioCaptureCB;
     return hr;
 }
 
@@ -201,6 +215,11 @@ HRESULT CameraCapture::InitCaptureFilters()
         captureVideo_ = false;
 
         console.error(_T("Error %x: Cannot create video capture filter"), hr);
+        goto InitCapFiltersFail;
+    }
+
+    hr = InitVideoSampleGrabber();
+    if (FAILED(hr)) {
         goto InitCapFiltersFail;
     }
 
@@ -283,6 +302,11 @@ HRESULT CameraCapture::InitCaptureFilters()
                 if (hr != NOERROR) {
                     console.error(_T("Cannot find AudioCapture::IAMStreamConfig"));
                 }
+
+                hr = InitAudioSampleGrabber();
+                if (FAILED(hr)) {
+                    goto InitCapFiltersFail;
+                }
             }
             else {
                 // There are no audio capture devices. We'll only allow video capture
@@ -305,20 +329,108 @@ InitCapFiltersFail:
     return E_FAIL;
 }
 
+//
+// All done with the capture filters and the graph builder
+//
 void CameraCapture::FreeCaptureFilters()
 {
     SAFE_COM_RELEASE(pVideoFilter_);
     SAFE_COM_RELEASE(pAudioFilter_);
 
-    SAFE_COM_RELEASE(pVideoGrabber_);
-    SAFE_COM_RELEASE(pAudioGrabber_);
+    SAFE_COM_RELEASE(pVideoGrabberFilter_);
+    SAFE_COM_RELEASE(pAudioGrabberFilter_);
+
+    SAFE_COM_RELEASE(pVideoSampleGrabber_);
+    SAFE_COM_RELEASE(pAudioSampleGrabber_);
+
+    SAFE_OBJECT_DELETE(pVideoCaptureCallback_);
+    SAFE_OBJECT_DELETE(pAudioCaptureCallback_);
 
     SAFE_COM_RELEASE(pVideoStreamConfig_);
     SAFE_COM_RELEASE(pAudioStreamConfig_);
     SAFE_COM_RELEASE(pVideoCompression_);
 
+    SAFE_COM_RELEASE(pVideoMediaControl_);
+    SAFE_COM_RELEASE(pVideoMediaEvent_);
+
     SAFE_COM_RELEASE(pFilterGraph_);
     SAFE_COM_RELEASE(pCaptureBuilder_);
+}
+
+HRESULT CameraCapture::InitVideoSampleGrabber()
+{
+    HRESULT hr = E_FAIL;
+
+    // Create video grabber filter
+    SAFE_COM_RELEASE(pVideoGrabberFilter_);
+    hr = CoCreateInstance(CLSID_SampleGrabber, NULL, CLSCTX_INPROC_SERVER,
+                          IID_IBaseFilter, (void **)&pVideoGrabberFilter_);
+    if (FAILED(hr)) {
+        console.error(_T("Create video grabber filter failed. Error: %x"), hr);
+        return hr;
+    }
+    if (pVideoGrabberFilter_ != nullptr) {
+        SAFE_COM_RELEASE(pVideoSampleGrabber_);
+        hr = pVideoGrabberFilter_->QueryInterface(IID_ISampleGrabber, (void **)&(pVideoSampleGrabber_));
+        if (FAILED(hr)) {
+            console.error(_T("Query interface video sample grabber failed. Error: %x"), hr);
+            return hr;
+        }
+        if (pVideoSampleGrabber_ != nullptr) {
+            hr = pVideoSampleGrabber_->SetBufferSamples(FALSE);
+            if (FAILED(hr)) {
+                console.error(_T("Set video buffer samples failed. Error: %x"), hr);
+                return hr;
+            }
+        }
+        if (pFilterGraph_ != nullptr) {
+            hr = pFilterGraph_->AddFilter(pVideoGrabberFilter_, L"Video Grabber Filter");
+            if (FAILED(hr)) {
+                console.error(_T("AddFilter video sample grabber failed. Error: %x"), hr);
+                return hr;
+            }
+        }
+    }
+
+    return hr;
+}
+
+HRESULT CameraCapture::InitAudioSampleGrabber()
+{
+    HRESULT hr = E_FAIL;
+
+    // Create audio grabber filter
+    SAFE_COM_RELEASE(pAudioGrabberFilter_);
+    hr = CoCreateInstance(CLSID_SampleGrabber, NULL, CLSCTX_INPROC_SERVER,
+                          IID_IBaseFilter, (void **)&pAudioGrabberFilter_);
+    if (FAILED(hr)) {
+        console.error(_T("Create audio grabber filter failed. Error: %x"), hr);
+        return hr;
+    }
+    if (pAudioGrabberFilter_ != nullptr) {
+        SAFE_COM_RELEASE(pAudioSampleGrabber_);
+        hr = pAudioGrabberFilter_->QueryInterface(IID_ISampleGrabber, (void **)&(pAudioSampleGrabber_));
+        if (FAILED(hr)) {
+            console.error(_T("Query interface audio sample grabber failed. Error: %x"), hr);
+            return hr;
+        }
+        if (pAudioSampleGrabber_ != nullptr) {
+            hr = pAudioSampleGrabber_->SetBufferSamples(FALSE);
+            if (FAILED(hr)) {
+                console.error(_T("Set audio buffer samples failed. Error: %x"), hr);
+                return hr;
+            }
+        }
+        if (pFilterGraph_ != nullptr) {
+            hr = pFilterGraph_->AddFilter(pAudioGrabberFilter_, L"Audio Grabber Filter");
+            if (FAILED(hr)) {
+                console.error(_T("AddFilter audio sample grabber failed. Error: %x"), hr);
+                return hr;
+            }
+        }
+    }
+
+    return hr;
 }
 
 void CameraCapture::ChooseDevices(IMoniker * pVideoMoniker,
@@ -546,6 +658,15 @@ void CameraCapture::TearDownGraph()
     if (pAudioFilter_ != nullptr) {
         RemoveDownstream(pAudioFilter_);
     }
+
+    // Destroy the graph downstream of our grabber filters
+    if (pVideoGrabberFilter_ != nullptr) {
+        RemoveDownstream(pVideoGrabberFilter_);
+    }
+    if (pAudioGrabberFilter_ != nullptr) {
+        RemoveDownstream(pAudioGrabberFilter_);
+    }
+
     if (pVideoFilter_ != nullptr) {
         //pCaptureBuilder_->ReleaseFilters();
     }
@@ -584,7 +705,7 @@ HRESULT CameraCapture::BuildPreviewGraph()
 
     if (pAudioFilter_ == NULL)
         return S_FALSE;
-    
+
     // We already have another graph built ... tear down the old one
     if (captureGraphBuilt_)
         TearDownGraph();
@@ -1124,6 +1245,14 @@ HRESULT CameraCapture::StartPreview()
     if (!captureGraphBuilt_)
         return E_FAIL;
 
+    if (pVideoSampleGrabber_ && pVideoCaptureCallback_) {
+        hr = pVideoSampleGrabber_->SetCallback(pVideoCaptureCallback_, 1);
+        if (FAILED(hr)) {
+            console.error(_T("Error: %x, video SampleGrabber set callback failed."), hr);
+            return hr;
+        }
+    }
+
     // Run the filter graph
     if (pFilterGraph_) {
         IMediaControl * pMediaControl = NULL;
@@ -1141,7 +1270,7 @@ HRESULT CameraCapture::StartPreview()
             return hr;
         }
         isPreviewing_ = true;
-    }    
+    }
     return hr;
 }
 
@@ -1153,6 +1282,14 @@ HRESULT CameraCapture::StopPreview()
 
     if (!captureGraphBuilt_)
         return E_FAIL;
+
+    if (pVideoSampleGrabber_ && pVideoCaptureCallback_) {
+        hr = pVideoSampleGrabber_->SetCallback(NULL, 1);
+        if (FAILED(hr)) {
+            console.error(_T("Error: %x, video SampleGrabber set callback to NULL failed."), hr);
+            return hr;
+        }
+    }
 
     // Stop the filter graph
     if (pFilterGraph_) {
@@ -1174,7 +1311,7 @@ HRESULT CameraCapture::StopPreview()
     return hr;
 }
 
-HRESULT CameraCapture::Stop()
+HRESULT CameraCapture::Close()
 {
     HRESULT hr = E_FAIL;
 

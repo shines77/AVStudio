@@ -280,7 +280,7 @@ LRESULT CCameraHostDlg::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
                     ::ShowWindow(hwndPreview, SW_HIDE);
                 }
                 // Stop capturing and release interfaces
-                HRESULT hr = pCameraCapture_->Stop();
+                HRESULT hr = pCameraCapture_->Close();
                 pCameraCapture_->Release();
             }
             break;

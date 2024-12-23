@@ -15,6 +15,8 @@
 #include <vector>
 
 #include "string_utils.h"
+#include "VideoCaptureCB.h"
+#include "AudioCaptureCB.h"
 
 #ifdef _DEBUG
 #pragma comment(lib, "strmbased.lib")
@@ -141,12 +143,15 @@ public:
     };
 
     HRESULT CreateEnv();
-    HRESULT Stop();
+    HRESULT Close();
     void OnClose();
     void Release();
 
     HRESULT InitCaptureFilters();
     void FreeCaptureFilters();
+
+    HRESULT InitVideoSampleGrabber();
+    HRESULT InitAudioSampleGrabber();
 
     HRESULT BuildPreviewGraph();
 
@@ -242,8 +247,8 @@ private:
     IGraphBuilder *         pFilterGraph_;          // filter graph (Manager)
     ICaptureGraphBuilder2 * pCaptureBuilder_;       // capture graph (Builder)
 
-    IBaseFilter *           pVideoFilter_;          // Video filter
-    IBaseFilter *           pAudioFilter_;          // Audio filter
+    IBaseFilter *           pVideoFilter_;          // Video capture filter
+    IBaseFilter *           pAudioFilter_;          // Audio capture filter
 
     IBaseFilter *           pVideoMux_;             // Video file muxer (用于保存视频文件)
     IVideoWindow *          pVideoWindow_;          // 视频播放窗口
@@ -260,8 +265,14 @@ private:
 
     IAMDroppedFrames *      pDroppedFrames_;        // Drop info
 
-    ISampleGrabber *        pVideoGrabber_;         // 视频抓取回调
-    ISampleGrabber *        pAudioGrabber_;         // 音频抓取回调
+    IBaseFilter *           pVideoGrabberFilter_;   // Video grabber filter
+    IBaseFilter *           pAudioGrabberFilter_;   // Audio grabber filter
+
+    ISampleGrabber *        pVideoSampleGrabber_;   // 视频抓取回调
+    ISampleGrabber *        pAudioSampleGrabber_;   // 音频抓取回调
+
+    VideoCaptureCB *        pVideoCaptureCallback_;
+    AudioCaptureCB *        pAudioCaptureCallback_;
 
     bool    previewGraphBuilt_;
     bool    captureGraphBuilt_;
