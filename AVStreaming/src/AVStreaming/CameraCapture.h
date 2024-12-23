@@ -263,9 +263,12 @@ private:
     ISampleGrabber *        pVideoGrabber_;         // 视频抓取回调
     ISampleGrabber *        pAudioGrabber_;         // 音频抓取回调
 
-
     bool    previewGraphBuilt_;
     bool    captureGraphBuilt_;
+
+    bool    captureVideo_;
+    bool    captureAudio_;
+    bool    captureAudioIsRelevant_;
 
     bool    wantPreview_;
     bool    wantCapture_;
@@ -275,4 +278,7 @@ private:
 
     long    nDroppedBase_;
     long    nNotDroppedBase_;
+
+    std::tstring videoDevice_;
+    std::tstring audioDevice_;
 };

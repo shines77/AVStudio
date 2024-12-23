@@ -9,6 +9,7 @@
 
 #include <atlcomcli.h>      // For CComPtr<T>
 #include <atlconv.h>
+#include <math.h>
 #include <assert.h>
 
 #include "DShowUtil.h"
@@ -120,8 +121,8 @@ void CameraCapture::Release()
     SAFE_COM_RELEASE(pVideoGrabber_);
     SAFE_COM_RELEASE(pAudioGrabber_);
 
-    SAFE_COM_RELEASE(pCaptureBuilder_);
     SAFE_COM_RELEASE(pFilterGraph_);
+    SAFE_COM_RELEASE(pCaptureBuilder_);
 }
 
 HRESULT CameraCapture::CreateEnv()
@@ -173,18 +174,216 @@ HRESULT CameraCapture::CreateEnv()
 
 HRESULT CameraCapture::InitCaptureFilters()
 {
-    return 0;
+    HRESULT hr = CreateEnv();
+    if (hr != NOERROR) {
+        console.error(_T("Failed to call CreateEnv(): %x"), hr);
+        goto InitCapFiltersFail;
+    }
+
+    //
+    // First, we need a Video Capture filter, and some interfaces
+    //
+    SAFE_COM_RELEASE(pVideoFilter_);
+    if (pVideoMoniker_ != nullptr) {
+        hr = pVideoMoniker_->BindToObject(0, 0, IID_IBaseFilter, (void **)&pVideoFilter_);
+        if (SUCCEEDED(hr) && (pVideoFilter_ != nullptr)) {
+            // Add the video capture filter to the graph with its friendly name
+            hr = pFilterGraph_->AddFilter(pVideoFilter_, L"Video Filter");
+            if (hr != NOERROR) {
+                console.error(_T("Error %x: Cannot add video capture filter to filtergraph"), hr);
+                goto InitCapFiltersFail;
+            }
+        }
+    }
+
+    if (pVideoFilter_ == nullptr) {
+        // There are no video capture devices.
+        captureVideo_ = false;
+
+        console.error(_T("Error %x: Cannot create video capture filter"), hr);
+        goto InitCapFiltersFail;
+    }
+
+    // We use this interface to get the name of the driver
+    // Don't worry if it doesn't work:  This interface may not be available
+    // until the pin is connected, or it may not be available at all.
+    // (eg: interface may not be available for some DV capture)
+    SAFE_COM_RELEASE(pVideoCompression_);
+    hr = pCaptureBuilder_->FindInterface(&PIN_CATEGORY_CAPTURE,
+                                         &MEDIATYPE_Interleaved, pVideoFilter_,
+                                         IID_IAMVideoCompression, (void **)&pVideoCompression_);
+    if (hr != S_OK) {
+        hr = pCaptureBuilder_->FindInterface(&PIN_CATEGORY_CAPTURE,
+                                             &MEDIATYPE_Video, pVideoFilter_,
+                                             IID_IAMVideoCompression, (void **)&pVideoCompression_);
+    }
+
+    // !!! What if this interface isn't supported?
+    // We use this interface to set the frame rate and get the capture size
+    SAFE_COM_RELEASE(pVideoStreamConfig_);
+    hr = pCaptureBuilder_->FindInterface(&PIN_CATEGORY_CAPTURE,
+                                         &MEDIATYPE_Interleaved, pVideoFilter_,
+                                         IID_IAMStreamConfig, (void **)&pVideoStreamConfig_);
+
+    if (hr != NOERROR) {
+        hr = pCaptureBuilder_->FindInterface(&PIN_CATEGORY_CAPTURE,
+                                             &MEDIATYPE_Video, pVideoFilter_,
+                                             IID_IAMStreamConfig, (void **)&pVideoStreamConfig_);
+        if (hr != NOERROR) {
+            // This means we can't set frame rate (non-DV only)
+            console.error(_T("Error %x: Cannot find VideoCapture::IAMStreamConfig"), hr);
+        }
+    }
+
+    captureAudioIsRelevant_ = true;
+    AM_MEDIA_TYPE * pmt = nullptr;
+
+    // Default capture format
+    if (pVideoStreamConfig_ && pVideoStreamConfig_->GetFormat(&pmt) == S_OK) {
+        // DV capture does not use a VIDEOINFOHEADER
+        if (pmt->formattype == FORMAT_VideoInfo) {
+            // Resize our window to the default capture size
+            ResizeVideoWindow(HEADER(pmt->pbFormat)->biWidth,
+                              abs(HEADER(pmt->pbFormat)->biHeight));
+        }
+        if (pmt->majortype != MEDIATYPE_Video) {
+            // This capture filter captures something other that pure video.
+            // Maybe it's DV or something?  Anyway, chances are we shouldn't
+            // allow capturing audio separately, since our video capture
+            // filter may have audio combined in it already!
+            captureAudio_ = false;
+            captureAudioIsRelevant_ = false;
+        }
+        DeleteMediaType(pmt);
+    }
+
+    // There's no point making an audio capture filter
+    if (captureAudioIsRelevant_) {
+        // Create the audio capture filter, even if we are not capturing audio right
+        // now, so we have all the filters around all the time.
+
+        //
+        // We want an audio capture filter and some interfaces
+        //
+        if (pAudioMoniker_ != nullptr) {
+            SAFE_COM_RELEASE(pAudioFilter_);
+            hr = pAudioMoniker_->BindToObject(0, 0, IID_IBaseFilter, (void **)&pAudioFilter_);
+            if (SUCCEEDED(hr) && (pAudioFilter_ != nullptr)) {
+                // We'll need this in the graph to get audio property pages
+                hr = pFilterGraph_->AddFilter(pAudioFilter_, L"Audio Filter");
+                if (hr != NOERROR) {
+                    console.error(_T("Error %x: Cannot add audio capture filter to filtergraph"), hr);
+                    goto InitCapFiltersFail;
+                }
+
+                // !!! What if this interface isn't supported?
+                // We use this interface to set the captured wave format
+                hr = pCaptureBuilder_->FindInterface(&PIN_CATEGORY_CAPTURE, &MEDIATYPE_Audio, pAudioFilter_,
+                                                     IID_IAMStreamConfig, (void **)&pAudioStreamConfig_);
+                if (hr != NOERROR) {
+                    console.error(_T("Cannot find AudioCapture::IAMStreamConfig"));
+                }
+            }
+            else {
+                // There are no audio capture devices. We'll only allow video capture
+                captureAudio_ = false;
+                console.error(_T("Error: %x, Cannot create audio capture filter"), hr);
+                goto SkipAudio;
+            }
+        }
+        else {
+            // There are no audio capture devices. We'll only allow video capture
+            captureAudio_ = false;
+        }
+    }
+
+SkipAudio:
+    return hr;
+
+InitCapFiltersFail:
+    FreeCaptureFilters();
+    return E_FAIL;
 }
 
 void CameraCapture::FreeCaptureFilters()
 {
+    SAFE_COM_RELEASE(pVideoFilter_);
+    SAFE_COM_RELEASE(pAudioFilter_);
 
+    SAFE_COM_RELEASE(pVideoGrabber_);
+    SAFE_COM_RELEASE(pAudioGrabber_);
+
+    SAFE_COM_RELEASE(pVideoStreamConfig_);
+    SAFE_COM_RELEASE(pAudioStreamConfig_);
+    SAFE_COM_RELEASE(pVideoCompression_);
+
+    SAFE_COM_RELEASE(pFilterGraph_);
+    SAFE_COM_RELEASE(pCaptureBuilder_);
 }
 
 void CameraCapture::ChooseDevices(IMoniker * pVideoMoniker,
                                   IMoniker * pAudioMoniker)
 {
-    //
+    // We chose a new device. rebuild the graphs
+    if (pVideoMoniker != pVideoMoniker_ || pAudioMoniker != pAudioMoniker_) {
+        if (pVideoMoniker) {
+            pVideoMoniker->AddRef();
+        }
+        if (pAudioMoniker) {
+            pAudioMoniker->AddRef();
+        }
+
+        SAFE_COM_RELEASE(pVideoMoniker);
+        SAFE_COM_RELEASE(pAudioMoniker);
+        pVideoMoniker_ = pVideoMoniker;
+        pAudioMoniker_ = pAudioMoniker;
+
+        if (isPreviewing_)
+            StopPreview();
+        if (captureGraphBuilt_ || previewGraphBuilt_)
+            TearDownGraph();
+
+        FreeCaptureFilters();
+        InitCaptureFilters();
+
+        // Were we previewing?
+        if (wantPreview_) {
+            BuildPreviewGraph();
+            StartPreview();
+        }
+    }
+
+    static const int kVerSize = 40;
+    static const int kDescSize = 80;
+    static const int kStatusSize = kVerSize + kDescSize +5;
+    int ver_size = kVerSize;
+    int desc_size = kDescSize;
+    WCHAR wszVer[kVerSize] = { 0 }, wszDesc[kDescSize] = { 0 };
+    TCHAR tszStatus[kStatusSize] = { 0 };
+
+    // Put the video driver name in the status bar - if the filter supports
+    // IAMVideoCompression::GetInfo, that's the best way to get the name and
+    // the version.  Otherwise use the name we got from device enumeration
+    // as a fallback.
+    if (pVideoCompression_) {
+        HRESULT hr = pVideoCompression_->GetInfo(wszVer, &ver_size, wszDesc, &desc_size,
+                                                 NULL, NULL, NULL, NULL);
+        if (hr == S_OK) {
+            // It's possible that the call succeeded without actually filling
+            // in information for description and version.  If these strings
+            // are empty, just display the device's friendly name.
+            if (wcslen(wszDesc) && wcslen(wszVer)) {
+                hr = StringCchPrintf(tszStatus, kStatusSize, _T("%s - %s\0"), wszDesc, wszVer);
+                console.info(tszStatus);
+                return;
+            }
+        }
+    }
+
+    // Since the GetInfo method failed (or the interface did not exist),
+    // display the device's friendly name.
+    console.info(_T("ChooseDevices(): video = %s, audio = %s"),
+                 videoDevice_.c_str(), audioDevice_.c_str());
 }
 
 void CameraCapture::ChooseDevices(const TCHAR * videoDevice,
@@ -205,7 +404,6 @@ void CameraCapture::ChooseDevices(const TCHAR * videoDevice,
     // Handle the case where the video capture device used for the previous session
     // is not available now.
     BOOL bVideoFound = FALSE;
-
     if (videoDevice != nullptr) {
         for (size_t i = 0; i < videoDeviceList_.size(); i++) {
             std::tstring name = videoDeviceList_[i];
@@ -218,19 +416,22 @@ void CameraCapture::ChooseDevices(const TCHAR * videoDevice,
 
     if (!bVideoFound) {
         if (videoDeviceList_.size() > 0) {
+            videoDevice_ = videoDeviceList_[0];
             StringCchCopyN(szVideoDevice, NUMELMS(szVideoDevice),
-                           videoDeviceList_[0].c_str(), NUMELMS(szVideoDevice) - 1);
+                           videoDevice_.c_str(), NUMELMS(szVideoDevice) - 1);
+        }
+        else {
+            videoDevice_ = _T("");
         }
     }
 
-    // Handle the case where the video capture device used for the previous session
+    // Handle the case where the audio capture device used for the previous session
     // is not available now.
     BOOL bAudioFound = FALSE;
-
-    if (videoDevice != nullptr) {
+    if (audioDevice != nullptr) {
         for (size_t i = 0; i < audioDeviceList_.size(); i++) {
             std::tstring name = audioDeviceList_[i];
-            if (_tcscmp(szVideoDevice, name.c_str()) == 0) {
+            if (_tcscmp(szAudioDevice, name.c_str()) == 0) {
                 bAudioFound = TRUE;
                 break;
             }
@@ -239,8 +440,12 @@ void CameraCapture::ChooseDevices(const TCHAR * videoDevice,
 
     if (!bAudioFound) {
         if (audioDeviceList_.size() > 0) {
+            audioDevice_ = audioDeviceList_[0];
             StringCchCopyN(szAudioDevice, NUMELMS(szAudioDevice),
-                           audioDeviceList_[0].c_str(), NUMELMS(szAudioDevice) - 1);
+                           audioDevice_.c_str(), NUMELMS(szAudioDevice) - 1);
+        }
+        else {
+            audioDevice_ = _T("");
         }
     }
 
@@ -254,6 +459,13 @@ void CameraCapture::ChooseDevices(const TCHAR * videoDevice,
         hr = MkParseDisplayName(pBindCtx, szVideoDevice, &dwEaten, &pVideoMoniker);
         hr = MkParseDisplayName(pBindCtx, szAudioDevice, &dwEaten, &pAudioMoniker);
         pBindCtx->Release();
+    }
+
+    if (pVideoMoniker) {
+        videoDevice_ = szVideoDevice;
+    }
+    if (pAudioMoniker) {
+        audioDevice_ = szAudioDevice;
     }
 
     ChooseDevices(pVideoMoniker, pAudioMoniker);
@@ -700,7 +912,7 @@ size_t CameraCapture::EnumAVDevices(std::vector<std::tstring> & deviceList, bool
             if (hr == NOERROR) {
                 TCHAR deviceName[256] = { '\0' };
                 // 获取设备名称
-                int ret = string_utils::unicode_to_tchar(deviceName, _countof(deviceName), var.bstrVal);
+                int ret = string_utils::unicode_to_tchar(deviceName, NUMELMS(deviceName), var.bstrVal);
                 ::SysFreeString(var.bstrVal);
                 // 尝试用当前设备绑定到 device filter
                 IBaseFilter * pDeviceFilter = NULL;
@@ -763,7 +975,7 @@ HRESULT CameraCapture::BindDeviceFilter(IBaseFilter ** ppDeviceFilter, IMoniker 
         if (hr == NOERROR) {
             TCHAR deviceName[256] = { '\0' };
             // 获取设备名称
-            int ret = string_utils::unicode_to_tchar(deviceName, _countof(deviceName), var.bstrVal);
+            int ret = string_utils::unicode_to_tchar(deviceName, NUMELMS(deviceName), var.bstrVal);
             ::SysFreeString(var.bstrVal);
             hr = E_FAIL;
             if (inDeviceName != NULL && _tcscmp(inDeviceName, deviceName) == 0) {
