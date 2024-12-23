@@ -37,6 +37,7 @@ public:
     CameraCapture * GetSafeCapture() const;
 
     bool StartCapture();
+    bool StartCaptureOld();
     bool StopCapture();
 
     std::tstring GetSelectedVideoDevice() const;

@@ -77,7 +77,6 @@ BOOL CCameraHostDlg::Create(UINT nIDTemplate, HWND previewHwnd, CWnd * pParentWn
 	if (pCameraCapture_ == NULL) {
         pCameraCapture_ = new CameraCapture;
         if (pCameraCapture_ != NULL) {
-            pCameraCapture_->CreateEnv();
             if (previewHwnd != NULL) {
                 pCameraCapture_->SetPreviewHwnd(previewHwnd);
             }
@@ -101,11 +100,11 @@ BOOL CCameraHostDlg::OnInitDialog()
     UpdateData(FALSE);
 
     if (pCameraCapture_ != NULL) {
-        EnumAudioDeviceList();
-        EnumVideoDeviceList();
+        size_t nAudioCount = EnumAudioDeviceList();
+        size_t nVideoCount = EnumVideoDeviceList();
 
-        pCameraCapture_->EnumVideoConfigures();
-        pCameraCapture_->EnumAudioConfigures();
+        size_t nVideoConfig = pCameraCapture_->EnumVideoConfigures();
+        size_t nAudioConfig = pCameraCapture_->EnumAudioConfigures();
 
         inited_ = true;
         StartCapture();
@@ -181,6 +180,51 @@ std::tstring CCameraHostDlg::GetSelectedAudioDevice() const
 }
 
 bool CCameraHostDlg::StartCapture()
+{
+    if (!inited_) {
+        return false;
+    }
+
+    if (pCameraCapture_ != NULL) {
+        CameraCapture::PLAY_STATE playState = pCameraCapture_->GetPlayState();
+        if (playState == CameraCapture::PLAY_STATE::Paused) {
+            pCameraCapture_->ChangePreviewState(CameraCapture::PLAY_STATE::Running);
+        }
+        else if (playState == CameraCapture::PLAY_STATE::Running) {
+            pCameraCapture_->ChangePreviewState(CameraCapture::PLAY_STATE::Paused);
+        }
+        else {
+            pCameraCapture_->SetWantPreview(true);
+            pCameraCapture_->SetWantCapture(false);
+
+            std::tstring videoDevice = GetSelectedVideoDevice();
+            std::tstring audioDevice = GetSelectedAudioDevice();
+            if (videoDevice != selectedVideoDevice_ && audioDevice != selectedAudioDevice_) {
+                // 选择视频和音频设备, 并开始预览画面
+#if 0
+                pCameraCapture_->CreateEnv();
+                pCameraCapture_->ChooseDevices(videoDevice.c_str(), audioDevice.c_str());
+#else
+                pCameraCapture_->CreateEnv();
+                pCameraCapture_->BindVideoFilter(videoDevice.c_str());
+                pCameraCapture_->BindAudioFilter(audioDevice.c_str());
+                pCameraCapture_->InitCaptureFilters();
+                pCameraCapture_->BuildPreviewGraph();
+                bool result = pCameraCapture_->Render(MODE_PREVIEW_VIDEO, NULL,
+                                                      videoDevice.c_str(), audioDevice.c_str());
+#endif
+                if (videoDevice != selectedVideoDevice_)
+                    selectedVideoDevice_ = videoDevice;
+                if (audioDevice != selectedAudioDevice_)
+                    selectedAudioDevice_ = audioDevice;
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
+bool CCameraHostDlg::StartCaptureOld()
 {
     if (!inited_) {
         return false;

@@ -55,19 +55,27 @@ REFCLSID CameraCapture::GetDeviceCategory(bool isVideo)
 
 CameraCapture::CameraCapture(HWND hwndPreview /* = NULL */)
 {
-    hwndPreview_ = hwndPreview;
+    InitEnv(hwndPreview);
+}
 
-    InitEnv();
+void IMonikerRelease(IMoniker *& pMoniker)
+{
+    if (pMoniker) {
+        pMoniker->Release();
+        pMoniker = nullptr;
+    }
 }
 
 CameraCapture::~CameraCapture(void)
 {
-    HRESULT hr = Close();
+    OnClose();
     Release();
 }
 
-void CameraCapture::InitEnv()
+void CameraCapture::InitEnv(HWND hwndPreview)
 {
+    hwndPreview_ = hwndPreview;
+
     playState_ = PLAY_STATE::Unknown;
 
     pFilterGraph_ = NULL;
@@ -78,8 +86,8 @@ void CameraCapture::InitEnv()
 
     pVideoMux_ = NULL;
     pVideoWindow_ = NULL;
-    pVideoMediaControl_ = NULL;
-    pVideoMediaEvent_ = NULL;
+    pMediaControl_ = NULL;
+    pMediaEvent_ = NULL;
 
     pVideoMoniker_ = NULL;
     pAudioMoniker_ = NULL;
@@ -100,6 +108,8 @@ void CameraCapture::InitEnv()
 
     pDroppedFrames_ = NULL;
 
+    envInited_ = false;
+
     previewGraphBuilt_ = false;
     captureGraphBuilt_ = false;
 
@@ -109,30 +119,45 @@ void CameraCapture::InitEnv()
     isCapturing_ = false;
 
     isPreviewFaked_ = false;
+
+    nVideoWidth_ = -1;
+    nVideoHeight_ = -1;
 }
 
 void CameraCapture::Release()
 {
     SAFE_COM_RELEASE(pVideoMux_);
     SAFE_COM_RELEASE(pVideoWindow_);
-    SAFE_COM_RELEASE(pVideoMediaControl_);
-    SAFE_COM_RELEASE(pVideoMediaEvent_);
+    SAFE_COM_RELEASE(pMediaControl_);
+    SAFE_COM_RELEASE(pMediaEvent_);
 
     SAFE_COM_RELEASE(pVideoFilter_);
     SAFE_COM_RELEASE(pAudioFilter_);
 
-    SAFE_COM_RELEASE(pVideoMoniker_);
-    SAFE_COM_RELEASE(pAudioMoniker_);
+    //SAFE_COM_RELEASE(pVideoMoniker_);
+    //SAFE_COM_RELEASE(pAudioMoniker_);
+
+    SAFE_COM_RELEASE(pVideoGrabberFilter_);
+    SAFE_COM_RELEASE(pAudioGrabberFilter_);
 
     SAFE_COM_RELEASE(pVideoSampleGrabber_);
     SAFE_COM_RELEASE(pAudioSampleGrabber_);
 
+    // ISampleGrabberCB instance
+    SAFE_OBJECT_DELETE(pVideoCaptureCallback_);
+    SAFE_OBJECT_DELETE(pAudioCaptureCallback_);
+
     SAFE_COM_RELEASE(pFilterGraph_);
     SAFE_COM_RELEASE(pCaptureBuilder_);
+
+    hwndPreview_ = NULL;
 }
 
 HRESULT CameraCapture::CreateEnv()
 {
+    if (envInited_)
+        return S_OK;
+
     HRESULT hr;
 
     // 创建 filter graph manager
@@ -154,22 +179,20 @@ HRESULT CameraCapture::CreateEnv()
     SAFE_COM_RELEASE(pVideoWindow_);
     hr = pFilterGraph_->QueryInterface(IID_IVideoWindow, (void **)&pVideoWindow_);
     if (FAILED(hr))
+        return hr;  
+
+    // 创建流媒体的控制开关
+    SAFE_COM_RELEASE(pMediaControl_);
+    hr = pFilterGraph_->QueryInterface(IID_IMediaControl, (void **)&pMediaControl_);
+    if (FAILED(hr))
+        return hr;
+
+    // 创建流媒体的控制事件
+    SAFE_COM_RELEASE(pMediaEvent_);
+    hr = pFilterGraph_->QueryInterface(IID_IMediaEventEx, (void **)&pMediaEvent_);
+    if (FAILED(hr))
         return hr;
 #endif
-
-    playState_ = PLAY_STATE::Unknown;
-
-    // 创建摄像头流媒体的控制开关
-    SAFE_COM_RELEASE(pVideoMediaControl_);
-    hr = pFilterGraph_->QueryInterface(IID_IMediaControl, (void **)&pVideoMediaControl_);
-    if (FAILED(hr))
-        return hr;
-
-    // 创建摄像头流媒体的控制事件
-    SAFE_COM_RELEASE(pVideoMediaEvent_);
-    hr = pFilterGraph_->QueryInterface(IID_IMediaEventEx, (void **)&pVideoMediaEvent_);
-    if (FAILED(hr))
-        return hr;
 
     // 为 capture graph 指定要使用的 filter graph
     if (pCaptureBuilder_ != NULL && pFilterGraph_ != NULL) {
@@ -183,29 +206,48 @@ HRESULT CameraCapture::CreateEnv()
 
     SAFE_OBJECT_DELETE(pAudioCaptureCallback_);
     pAudioCaptureCallback_ = new AudioCaptureCB;
+
+    envInited_ = true;
     return hr;
+}
+
+void CameraCapture::FreeEnv()
+{
+    // ISampleGrabberCB instance
+    SAFE_OBJECT_DELETE(pVideoCaptureCallback_);
+    SAFE_OBJECT_DELETE(pAudioCaptureCallback_);
+
+    SAFE_COM_RELEASE(pFilterGraph_);
+    SAFE_COM_RELEASE(pCaptureBuilder_);
+
+    envInited_ = false;
 }
 
 HRESULT CameraCapture::InitCaptureFilters()
 {
-    HRESULT hr = CreateEnv();
-    if (hr != NOERROR) {
-        console.error(_T("Failed to call CreateEnv(): %x"), hr);
-        goto InitCapFiltersFail;
+    HRESULT hr = S_OK;
+
+    if (!envInited_) {
+        hr = CreateEnv();
+        if (hr != S_OK) {
+            console.error(_T("Failed to call CreateEnv(): %x"), hr);
+            goto InitCapFiltersFail;
+        }
     }
 
     //
     // First, we need a Video Capture filter, and some interfaces
     //
-    SAFE_COM_RELEASE(pVideoFilter_);
     if (pVideoMoniker_ != nullptr) {
-        hr = pVideoMoniker_->BindToObject(0, 0, IID_IBaseFilter, (void **)&pVideoFilter_);
-        if (SUCCEEDED(hr) && (pVideoFilter_ != nullptr)) {
-            // Add the video capture filter to the graph with its friendly name
-            hr = pFilterGraph_->AddFilter(pVideoFilter_, L"Video Filter");
-            if (hr != NOERROR) {
-                console.error(_T("Error %x: Cannot add video capture filter to filtergraph"), hr);
-                goto InitCapFiltersFail;
+        if (pVideoFilter_ == nullptr) {
+            hr = pVideoMoniker_->BindToObject(0, 0, IID_IBaseFilter, (void **)&pVideoFilter_);
+            if (SUCCEEDED(hr) && (pVideoFilter_ != nullptr)) {
+                // Add the video capture filter to the graph with its friendly name
+                hr = pFilterGraph_->AddFilter(pVideoFilter_, L"Video Filter");
+                if (hr != NOERROR) {
+                    console.error(_T("Error %x: Cannot add video capture filter to filtergraph"), hr);
+                    goto InitCapFiltersFail;
+                }
             }
         }
     }
@@ -262,8 +304,10 @@ HRESULT CameraCapture::InitCaptureFilters()
         // DV capture does not use a VIDEOINFOHEADER
         if (pmt->formattype == FORMAT_VideoInfo) {
             // Resize our window to the default capture size
-            ResizeVideoWindow(HEADER(pmt->pbFormat)->biWidth,
-                              abs(HEADER(pmt->pbFormat)->biHeight));
+            if (pmt->pbFormat != nullptr) {
+                ResizeVideoWindow(HEADER(pmt->pbFormat)->biWidth,
+                                  abs(HEADER(pmt->pbFormat)->biHeight));
+            }
         }
         if (pmt->majortype != MEDIATYPE_Video) {
             // This capture filter captures something other that pure video.
@@ -285,20 +329,29 @@ HRESULT CameraCapture::InitCaptureFilters()
         // We want an audio capture filter and some interfaces
         //
         if (pAudioMoniker_ != nullptr) {
-            SAFE_COM_RELEASE(pAudioFilter_);
-            hr = pAudioMoniker_->BindToObject(0, 0, IID_IBaseFilter, (void **)&pAudioFilter_);
-            if (SUCCEEDED(hr) && (pAudioFilter_ != nullptr)) {
-                // We'll need this in the graph to get audio property pages
-                hr = pFilterGraph_->AddFilter(pAudioFilter_, L"Audio Filter");
-                if (hr != NOERROR) {
-                    console.error(_T("Error %x: Cannot add audio capture filter to filtergraph"), hr);
-                    goto InitCapFiltersFail;
+            if (pAudioFilter_ == nullptr) {
+                hr = pAudioMoniker_->BindToObject(0, 0, IID_IBaseFilter, (void **)&pAudioFilter_);
+                if (SUCCEEDED(hr) && (pAudioFilter_ != nullptr)) {
+                    // We'll need this in the graph to get audio property pages
+                    hr = pFilterGraph_->AddFilter(pAudioFilter_, L"Audio Filter");
+                    if (hr != NOERROR) {
+                        console.error(_T("Error %x: Cannot add audio capture filter to filtergraph"), hr);
+                        goto InitCapFiltersFail;
+                    }
                 }
+                else {
+                    // There are no audio capture devices. We'll only allow video capture
+                    captureAudio_ = false;
+                    console.error(_T("Error: %x, Cannot create audio capture filter"), hr);
+                    goto SkipAudio;
+                }
+            }
 
+            if (pAudioFilter_ != nullptr) {
                 // !!! What if this interface isn't supported?
                 // We use this interface to set the captured wave format
                 hr = pCaptureBuilder_->FindInterface(&PIN_CATEGORY_CAPTURE, &MEDIATYPE_Audio, pAudioFilter_,
-                                                     IID_IAMStreamConfig, (void **)&pAudioStreamConfig_);
+                                                        IID_IAMStreamConfig, (void **)&pAudioStreamConfig_);
                 if (hr != NOERROR) {
                     console.error(_T("Cannot find AudioCapture::IAMStreamConfig"));
                 }
@@ -307,12 +360,6 @@ HRESULT CameraCapture::InitCaptureFilters()
                 if (FAILED(hr)) {
                     goto InitCapFiltersFail;
                 }
-            }
-            else {
-                // There are no audio capture devices. We'll only allow video capture
-                captureAudio_ = false;
-                console.error(_T("Error: %x, Cannot create audio capture filter"), hr);
-                goto SkipAudio;
             }
         }
         else {
@@ -334,6 +381,13 @@ InitCapFiltersFail:
 //
 void CameraCapture::FreeCaptureFilters()
 {
+    if (pVideoSampleGrabber_) {
+        pVideoSampleGrabber_->SetCallback(NULL, 1);
+    }
+    if (pAudioSampleGrabber_) {
+        pAudioSampleGrabber_->SetCallback(NULL, 1);
+    }
+
     SAFE_COM_RELEASE(pVideoFilter_);
     SAFE_COM_RELEASE(pAudioFilter_);
 
@@ -343,18 +397,12 @@ void CameraCapture::FreeCaptureFilters()
     SAFE_COM_RELEASE(pVideoSampleGrabber_);
     SAFE_COM_RELEASE(pAudioSampleGrabber_);
 
-    SAFE_OBJECT_DELETE(pVideoCaptureCallback_);
-    SAFE_OBJECT_DELETE(pAudioCaptureCallback_);
-
     SAFE_COM_RELEASE(pVideoStreamConfig_);
     SAFE_COM_RELEASE(pAudioStreamConfig_);
     SAFE_COM_RELEASE(pVideoCompression_);
 
-    SAFE_COM_RELEASE(pVideoMediaControl_);
-    SAFE_COM_RELEASE(pVideoMediaEvent_);
-
-    SAFE_COM_RELEASE(pFilterGraph_);
-    SAFE_COM_RELEASE(pCaptureBuilder_);
+    SAFE_COM_RELEASE(pMediaControl_);
+    SAFE_COM_RELEASE(pMediaEvent_);
 }
 
 HRESULT CameraCapture::InitVideoSampleGrabber()
@@ -445,8 +493,8 @@ void CameraCapture::ChooseDevices(IMoniker * pVideoMoniker,
             pAudioMoniker->AddRef();
         }
 
-        SAFE_COM_RELEASE(pVideoMoniker);
-        SAFE_COM_RELEASE(pAudioMoniker);
+        IMonikerRelease(pVideoMoniker_);
+        IMonikerRelease(pAudioMoniker_);
         pVideoMoniker_ = pVideoMoniker;
         pAudioMoniker_ = pAudioMoniker;
 
@@ -573,6 +621,16 @@ void CameraCapture::ChooseDevices(const TCHAR * videoDevice,
         pBindCtx->Release();
     }
 
+    // 获取 Video moniker
+    if (pVideoMoniker == nullptr) {
+        hr = QueryVideoDevice(szVideoDevice, &pVideoMoniker);
+    }
+
+    // 获取 Audio moniker
+    if (pAudioMoniker == nullptr) {
+        hr = QueryAudioDevice(szAudioDevice, &pAudioMoniker);
+    }
+
     if (pVideoMoniker) {
         videoDevice_ = szVideoDevice;
     }
@@ -582,8 +640,8 @@ void CameraCapture::ChooseDevices(const TCHAR * videoDevice,
 
     ChooseDevices(pVideoMoniker, pAudioMoniker);
 
-    SAFE_COM_RELEASE(pVideoMoniker);
-    SAFE_COM_RELEASE(pAudioMoniker);
+    IMonikerRelease(pVideoMoniker);
+    IMonikerRelease(pAudioMoniker);
 }
 
 //
@@ -639,8 +697,10 @@ void CameraCapture::RemoveDownstream(IBaseFilter * pFilter)
 //
 void CameraCapture::TearDownGraph()
 {
-    SAFE_COM_RELEASE(pVideoMediaEvent_);
-    SAFE_COM_RELEASE(pVideoMediaControl_);
+    HRESULT hr = Close();
+
+    SAFE_COM_RELEASE(pMediaEvent_);
+    SAFE_COM_RELEASE(pMediaControl_);
     SAFE_COM_RELEASE(pDroppedFrames_);
 
     if (pVideoWindow_ != nullptr) {
@@ -670,6 +730,14 @@ void CameraCapture::TearDownGraph()
     if (pVideoFilter_ != nullptr) {
         //pCaptureBuilder_->ReleaseFilters();
     }
+
+    captureGraphBuilt_ = false;
+    previewGraphBuilt_ = false;
+    isPreviewFaked_ = false;
+
+    // Reset video size
+    nVideoWidth_ = -1;
+    nVideoHeight_ = -1;
 }
 
 void CameraCapture::OnClose()
@@ -679,6 +747,7 @@ void CameraCapture::OnClose()
     StopDShowCapture();
     TearDownGraph();
     FreeCaptureFilters();
+    FreeEnv();
 }
 
 int GetStatusHeight()
@@ -689,7 +758,7 @@ int GetStatusHeight()
 // build the preview graph!
 HRESULT CameraCapture::BuildPreviewGraph()
 {
-    HRESULT hr;
+    HRESULT hr = S_OK;
 
     // We have one already
     if (previewGraphBuilt_)
@@ -710,17 +779,35 @@ HRESULT CameraCapture::BuildPreviewGraph()
     if (captureGraphBuilt_)
         TearDownGraph();
 
+    // Reset video size
+    nVideoWidth_ = -1;
+    nVideoHeight_ = -1;
+
     if (pCaptureBuilder_) {
-        hr = pCaptureBuilder_->RenderStream(&PIN_CATEGORY_PREVIEW,
-                                            &MEDIATYPE_Interleaved, pVideoFilter_, NULL, NULL);
+        if (wantCapture_) {
+            hr = pCaptureBuilder_->RenderStream(&PIN_CATEGORY_PREVIEW,
+                                                &MEDIATYPE_Interleaved, pVideoFilter_,
+                                                pVideoGrabberFilter_, NULL);
+        }
+        else {
+            hr = pCaptureBuilder_->RenderStream(&PIN_CATEGORY_PREVIEW,
+                                                &MEDIATYPE_Interleaved, pVideoFilter_, NULL, NULL);
+        }
         if (hr == VFW_S_NOPREVIEWPIN) {
             // Preview was faked up for us using the (only) capture pin
             isPreviewFaked_ = true;
         }
         else if (hr != S_OK) {
             // Maybe it's DV?
-            hr = pCaptureBuilder_->RenderStream(&PIN_CATEGORY_PREVIEW,
-                                                &MEDIATYPE_Video, pVideoFilter_, NULL, NULL);
+            if (wantCapture_) {
+                hr = pCaptureBuilder_->RenderStream(&PIN_CATEGORY_PREVIEW,
+                                                    &MEDIATYPE_Video, pVideoFilter_,
+                                                    pVideoGrabberFilter_, NULL);
+            }
+            else {
+                hr = pCaptureBuilder_->RenderStream(&PIN_CATEGORY_PREVIEW,
+                                                    &MEDIATYPE_Video, pVideoFilter_, NULL, NULL);
+            }
             if (hr == VFW_S_NOPREVIEWPIN) {
                 // Preview was faked up for us using the (only) capture pin
                 isPreviewFaked_ = true;
@@ -750,50 +837,51 @@ HRESULT CameraCapture::BuildPreviewGraph()
         else {
             // If we got here, pVideoWindow_ is not NULL
             ASSERT(pVideoWindow_ != NULL);
-            hr = E_FAIL;
-            if (hwndPreview_ != NULL && ::IsWindow(hwndPreview_)) {
-                // Find out if this is a DV stream
-                AM_MEDIA_TYPE * pmtDV = NULL;
-                if (pVideoStreamConfig_ && SUCCEEDED(pVideoStreamConfig_->GetFormat(&pmtDV))) {
-                    if (pmtDV->formattype == FORMAT_DvInfo) {
-                        // In this case we want to set the size of the parent window to that of
-                        // current DV resolution.
-                        // We get that resolution from the IVideoWindow.
-                        SmartPtr<IBasicVideo> pBasicVideo;
 
-				        hr = pVideoWindow_->QueryInterface(IID_IBasicVideo, (void**)&pBasicVideo);
-                        if (SUCCEEDED(hr)) {
-                            HRESULT hr1, hr2;
-                            long lWidth, lHeight;
+            // Find out if this is a DV stream
+            AM_MEDIA_TYPE * pmtDV = NULL;
+            if (pVideoStreamConfig_ && SUCCEEDED(pVideoStreamConfig_->GetFormat(&pmtDV))) {
+                if (pmtDV->formattype == FORMAT_DvInfo) {
+                    // In this case we want to set the size of the parent window to that of
+                    // current DV resolution.
+                    // We get that resolution from the IVideoWindow.
+                    SmartPtr<IBasicVideo> pBasicVideo;
 
-                            hr1 = pBasicVideo->get_VideoHeight(&lHeight);
-                            hr2 = pBasicVideo->get_VideoWidth(&lWidth);
-                            if (SUCCEEDED(hr1) && SUCCEEDED(hr2)) {
-                                ResizeVideoWindow(lWidth, abs(lHeight));
-                            }
+				    hr = pVideoWindow_->QueryInterface(IID_IBasicVideo, (void**)&pBasicVideo);
+                    if (SUCCEEDED(hr)) {
+                        HRESULT hr1, hr2;
+                        long lWidth, lHeight;
+
+                        hr1 = pBasicVideo->get_VideoHeight(&lHeight);
+                        hr2 = pBasicVideo->get_VideoWidth(&lWidth);
+                        if (SUCCEEDED(hr1) && SUCCEEDED(hr2)) {
+                            ResizeVideoWindow(lWidth, abs(lHeight));
                         }
                     }
                 }
+            }
 
-                CRect rc;
-                // We own the window now
-                hr = pVideoWindow_->put_Owner((OAHWND)hwndPreview_);
-                // you are now a child
-                hr = pVideoWindow_->put_WindowStyle(WS_CHILD | WS_CLIPCHILDREN);
+            // Create the media control
+            SAFE_COM_RELEASE(pMediaControl_);
+            hr = pFilterGraph_->QueryInterface(IID_IMediaControl, (void **)&pMediaControl_);
+            if (FAILED(hr)) {
+                console.error(_T("Query IMediaControl interface failed. Error: %x"), hr);
+                //return hr;
+            }
 
-                // Give the preview window all our space but where the status bar is
-                GetClientRect(hwndPreview_, &rc);
-                int cyBorder = GetSystemMetrics(SM_CYBORDER);
-                int cy = GetStatusHeight() + cyBorder;
-                //rc.bottom -= cy;
+            // Make sure we process events while we're previewing!
+            SAFE_COM_RELEASE(pMediaEvent_);
+            hr = pFilterGraph_->QueryInterface(IID_IMediaEventEx, (void **)&pMediaEvent_);
+            if (FAILED(hr)) {
+                console.error(_T("Query IMediaEventEx interface failed. Error: %x"), hr);
+                //return hr;
+            }
 
-                hr = pVideoWindow_->SetWindowPosition(0, 0, rc.right, rc.bottom); // be this big
-                hr = pVideoWindow_->put_Visible(OATRUE);
-
-                // Make sure we process events while we're previewing!
-                hr = pFilterGraph_->QueryInterface(IID_IMediaEventEx, (void **)&pVideoMediaEvent_);
-                if (hr == NOERROR) {
-                    hr = pVideoMediaEvent_->SetNotifyWindow((OAHWND)hwndPreview_, WM_GRAPH_NOTIFY, 0);
+            hr = E_FAIL;
+            if (hwndPreview_ != NULL && ::IsWindow(hwndPreview_)) {
+                bool result = AttachToVideoWindow(hwndPreview_);
+                if (result) {
+                    hr = S_OK;
                 }
             }
         }
@@ -844,8 +932,8 @@ bool CameraCapture::AttachToVideoWindow(HWND hwndPreview)
             return false;
 
         // Start receiving events
-        if (pVideoMediaEvent_ != NULL) {
-            hr = pVideoMediaEvent_->SetNotifyWindow((OAHWND)hwndPreview, WM_GRAPH_NOTIFY, 0);
+        if (pMediaEvent_ != NULL) {
+            hr = pMediaEvent_->SetNotifyWindow((OAHWND)hwndPreview, WM_GRAPH_NOTIFY, 0);
             if (FAILED(hr))
                 return false;
         }
@@ -859,8 +947,8 @@ void CameraCapture::ResizeVideoWindow(HWND hwndPreview /* = NULL */)
     if (hwndPreview == NULL)
         hwndPreview = hwndPreview_;
 
-    if (pVideoWindow_ != NULL) {
-        if (hwndPreview != NULL && ::IsWindow(hwndPreview)) {
+    if (hwndPreview != NULL && ::IsWindow(hwndPreview)) {
+        if (pVideoWindow_ != NULL) {
             CRect rc;
             ::GetClientRect(hwndPreview, &rc);
             pVideoWindow_->SetWindowPosition(0, 0, rc.right, rc.bottom);
@@ -870,12 +958,15 @@ void CameraCapture::ResizeVideoWindow(HWND hwndPreview /* = NULL */)
 
 void CameraCapture::ResizeVideoWindow(long nWidth, long nHeight)
 {
+    nVideoWidth_ = nWidth;
+    nVideoHeight_ = nHeight;
+
     HWND hwndPreview = hwndPreview_;
     if (hwndPreview != NULL && ::IsWindow(hwndPreview)) {
-        BOOL result = ::MoveWindow(hwndPreview, 0, 0, nWidth, nHeight, TRUE);
-        if (result) {
-            ResizeVideoWindow(hwndPreview);
-        }
+        BOOL result = ::MoveWindow(hwndPreview, 10, 10, nWidth, nHeight, TRUE);
+        //if (result) {
+        //    ResizeVideoWindow(hwndPreview);
+        //}
     }
 }
 
@@ -1079,9 +1170,9 @@ HRESULT CameraCapture::BindDeviceFilter(IBaseFilter ** ppDeviceFilter, IMoniker 
                                         int nIndex, IMoniker * pMoniker,
                                         const TCHAR * inDeviceName, bool isVideo)
 {
-    assert(ppDeviceFilter != nullptr);
     assert(pMoniker != nullptr);
     assert(inDeviceName != nullptr);
+    assert(ppDeviceMoniker != nullptr);
 
     // 设备属性信息
     IPropertyBag * pPropBag = NULL;
@@ -1100,33 +1191,35 @@ HRESULT CameraCapture::BindDeviceFilter(IBaseFilter ** ppDeviceFilter, IMoniker 
             ::SysFreeString(var.bstrVal);
             hr = E_FAIL;
             if (inDeviceName != NULL && _tcscmp(inDeviceName, deviceName) == 0) {
-                ReleaseDeviceFilter(ppDeviceFilter);
-                // 尝试用当前设备绑定到 device filter
-                hr = pMoniker->BindToObject(0, 0, IID_IBaseFilter, (void **)ppDeviceFilter);
-                if (SUCCEEDED(hr) && ((ppDeviceFilter != NULL) && (*ppDeviceFilter != NULL))) {
-                    if (ppDeviceMoniker != nullptr) {
-                        *ppDeviceMoniker = pMoniker;
-                        pMoniker->AddRef();
-                    }
-                    hr = S_OK;
-                    if (pFilterGraph_ != nullptr) {
-                        // 将 Device filter 加入 filter graph
-                        IBaseFilter * pDeviceFilter = *ppDeviceFilter;
-                        hr = pFilterGraph_->AddFilter(pDeviceFilter, GetDeviceFilterName(isVideo));
-                        if (FAILED(hr)) {
-                            console.error(_T("Failed to add %s device filter to filter graph: %x"),
-                                          GetDeviceType(isVideo), hr);
+                if (ppDeviceMoniker != nullptr) {
+                    ULONG ref_cnt = pMoniker->AddRef();
+                    *ppDeviceMoniker = pMoniker;
+                }
+                if (ppDeviceFilter != nullptr) {
+                    ReleaseDeviceFilter(ppDeviceFilter);
+                    // 尝试用当前设备绑定到 device filter
+                    hr = pMoniker->BindToObject(0, 0, IID_IBaseFilter, (void **)ppDeviceFilter);
+                    if (SUCCEEDED(hr) && ((ppDeviceFilter != NULL) && (*ppDeviceFilter != NULL))) {
+                        hr = S_OK;
+                        if (pFilterGraph_ != nullptr) {
+                            // 将 Device filter 加入 filter graph
+                            IBaseFilter * pDeviceFilter = *ppDeviceFilter;
+                            hr = pFilterGraph_->AddFilter(pDeviceFilter, GetDeviceFilterName(isVideo));
+                            if (FAILED(hr)) {
+                                console.error(_T("Failed to add %s device filter to filter graph: %x"),
+                                              GetDeviceType(isVideo), hr);
+                            }
                         }
                     }
-                }
-                else {
-                    if (inDeviceName)
-                        console.error(_T("%s BindToObject Failed. index = %d, name = %s"),
-                                      GetDeviceType(isVideo), nIndex, inDeviceName);
-                    else
-                        console.error(_T("%s BindToObject Failed. index = %d, Moniker = %x"),
-                                      GetDeviceType(isVideo), nIndex, pMoniker);
-                    hr = E_FAIL;
+                    else {
+                        if (inDeviceName)
+                            console.error(_T("%s BindToObject Failed. index = %d, name = %s"),
+                                          GetDeviceType(isVideo), nIndex, inDeviceName);
+                        else
+                            console.error(_T("%s BindToObject Failed. index = %d, Moniker = %x"),
+                                          GetDeviceType(isVideo), nIndex, pMoniker);
+                        hr = E_FAIL;
+                    }
                 }
             }
         }
@@ -1158,6 +1251,9 @@ HRESULT CameraCapture::BindDeviceFilter(IBaseFilter ** ppDeviceFilter, IMoniker 
         SAFE_COM_RELEASE(pCreateDevEnum);
         return E_FAIL;
     }
+
+    assert(ppDeviceMoniker != nullptr);
+    *ppDeviceMoniker = nullptr;
 
     ULONG cFetched = 0;
     int nIndex = 0;
@@ -1224,6 +1320,26 @@ HRESULT CameraCapture::BindAudioFilter(const TCHAR * audioDevice)
     return hr;
 }
 
+// 根据选择的视频设备获取 IMoniker
+HRESULT CameraCapture::QueryVideoDevice(const TCHAR * videoDevice, IMoniker ** ppVideoMoniker)
+{
+    if (videoDevice == NULL)
+        return E_INVALIDARG;
+
+    HRESULT hr = BindDeviceFilter(NULL, ppVideoMoniker, videoDevice, true);
+    return hr;
+}
+
+// 根据选择的音频设备获取 IMoniker
+HRESULT CameraCapture::QueryAudioDevice(const TCHAR * audioDevice, IMoniker ** ppAudioMoniker)
+{
+    if (audioDevice == NULL)
+        return E_INVALIDARG;
+
+    HRESULT hr = BindDeviceFilter(NULL, ppAudioMoniker, audioDevice, false);
+    return hr;
+}
+
 // 枚举视频压缩格式
 size_t CameraCapture::EnumVideoCompressFormat()
 {
@@ -1242,21 +1358,30 @@ HRESULT CameraCapture::StartPreview()
     if (isPreviewing_)
         return S_OK;
 
-    if (!captureGraphBuilt_)
+    if (!previewGraphBuilt_)
         return E_FAIL;
 
-    if (pVideoSampleGrabber_ && pVideoCaptureCallback_) {
-        hr = pVideoSampleGrabber_->SetCallback(pVideoCaptureCallback_, 1);
-        if (FAILED(hr)) {
-            console.error(_T("Error: %x, video SampleGrabber set callback failed."), hr);
-            return hr;
+    if (wantCapture_) {
+        if (pVideoSampleGrabber_ && pVideoCaptureCallback_) {
+            hr = pVideoSampleGrabber_->SetCallback(pVideoCaptureCallback_, 1);
+            if (FAILED(hr)) {
+                console.error(_T("Error: %x, video SampleGrabber set callback failed."), hr);
+                return hr;
+            }
         }
     }
+
+    hr = pCaptureBuilder_->RenderStream(&PIN_CATEGORY_PREVIEW,
+                                        &MEDIATYPE_Video, pVideoFilter_, NULL, NULL);
+
+    /******* 设置视频播放窗口 *******/
+    if (!AttachToVideoWindow(hwndPreview_))
+        return -1;
 
     // Run the filter graph
     if (pFilterGraph_) {
         IMediaControl * pMediaControl = NULL;
-        HRESULT hr = pFilterGraph_->QueryInterface(IID_IMediaControl, (void **)&pMediaControl);
+        hr = pFilterGraph_->QueryInterface(IID_IMediaControl, (void **)&pMediaControl);
         if (SUCCEEDED(hr)) {
             hr = pMediaControl->Run();
             if (FAILED(hr)) {
@@ -1283,18 +1408,20 @@ HRESULT CameraCapture::StopPreview()
     if (!captureGraphBuilt_)
         return E_FAIL;
 
-    if (pVideoSampleGrabber_ && pVideoCaptureCallback_) {
-        hr = pVideoSampleGrabber_->SetCallback(NULL, 1);
-        if (FAILED(hr)) {
-            console.error(_T("Error: %x, video SampleGrabber set callback to NULL failed."), hr);
-            return hr;
+    if (wantCapture_) {
+        if (pVideoSampleGrabber_ && pVideoCaptureCallback_) {
+            hr = pVideoSampleGrabber_->SetCallback(NULL, 1);
+            if (FAILED(hr)) {
+                console.error(_T("Error: %x, video SampleGrabber set callback to NULL failed."), hr);
+                return hr;
+            }
         }
     }
 
     // Stop the filter graph
     if (pFilterGraph_) {
         IMediaControl * pMediaControl = NULL;
-        HRESULT hr = pFilterGraph_->QueryInterface(IID_IMediaControl, (void **)&pMediaControl);
+        hr = pFilterGraph_->QueryInterface(IID_IMediaControl, (void **)&pMediaControl);
         if (SUCCEEDED(hr)) {
             hr = pMediaControl->Stop();
             pMediaControl->Release();
@@ -1316,15 +1443,15 @@ HRESULT CameraCapture::Close()
     HRESULT hr = E_FAIL;
 
     // Stop previewing data
-    if (pVideoMediaControl_ != nullptr) {
-        hr = pVideoMediaControl_->StopWhenReady();
+    if (pMediaControl_ != nullptr) {
+        hr = pMediaControl_->StopWhenReady();
     }
 
     playState_ = PLAY_STATE::Stopped;
 
     // Stop receiving events
-    if (pVideoMediaEvent_ != nullptr) {
-        hr = pVideoMediaEvent_->SetNotifyWindow(NULL, WM_GRAPH_NOTIFY, 0);
+    if (pMediaEvent_ != nullptr) {
+        hr = pMediaEvent_->SetNotifyWindow(NULL, WM_GRAPH_NOTIFY, 0);
     }
 
     // Relinquish ownership (IMPORTANT!) of the video window.
@@ -1335,8 +1462,6 @@ HRESULT CameraCapture::Close()
         hr = pVideoWindow_->put_Visible(OAFALSE);
         hr = pVideoWindow_->put_Owner(NULL);
     }
-
-    hwndPreview_ = NULL;
     return hr;
 }
 
@@ -1463,7 +1588,7 @@ bool CameraCapture::Render(int mode, TCHAR * videoPath,
                            const TCHAR * videoDevice,
                            const TCHAR * audioDevice)
 {
-    HRESULT hr;
+    HRESULT hr = S_OK;
 
     // 检查 Video capture Builder
     if (pCaptureBuilder_ == NULL)
@@ -1473,6 +1598,7 @@ bool CameraCapture::Render(int mode, TCHAR * videoPath,
     if (pFilterGraph_ == NULL)
         return false;
 
+#if 0
     if (mode != MODE_LOCAL_VIDEO) {
         // 创建 Video filter
         hr = BindVideoFilter(videoDevice);
@@ -1482,9 +1608,10 @@ bool CameraCapture::Render(int mode, TCHAR * videoPath,
             hr = BindAudioFilter(audioDevice);
         }
     }
+#endif
 
     if (mode == MODE_PREVIEW_VIDEO) {     // 预览视频
-        hr = pCaptureBuilder_->RenderStream(&PIN_CATEGORY_PREVIEW, &MEDIATYPE_Video, pVideoFilter_, NULL, NULL);
+        //hr = pCaptureBuilder_->RenderStream(&PIN_CATEGORY_PREVIEW, &MEDIATYPE_Video, pVideoFilter_, NULL, NULL);
         if (hr == VFW_S_NOPREVIEWPIN) {
             // preview was faked up for us using the (only) capture pin
         }
@@ -1540,11 +1667,11 @@ bool CameraCapture::Render(int mode, TCHAR * videoPath,
         return false;
 
     // 检查摄像头流媒体的控制开关
-    if (pVideoMediaControl_ == NULL)
+    if (pMediaControl_ == NULL)
         return false;
 
     // 开始预览或录制
-    hr = pVideoMediaControl_->Run();
+    hr = pMediaControl_->Run();
     if (FAILED(hr))
         return false;
 
@@ -1557,10 +1684,10 @@ HRESULT CameraCapture::HandleGraphEvent(void)
     LONG_PTR evParam1 = NULL, evParam2 = NULL;
     HRESULT hr = S_OK;
 
-    if (pVideoMediaEvent_ == NULL)
+    if (pMediaEvent_ == NULL)
         return E_POINTER;
 
-    while (SUCCEEDED(pVideoMediaEvent_->GetEvent(&evCode, &evParam1, &evParam2, 0))) {
+    while (SUCCEEDED(pMediaEvent_->GetEvent(&evCode, &evParam1, &evParam2, 0))) {
         //
         // Insert event processing code here, if desired
         //
@@ -1570,7 +1697,7 @@ HRESULT CameraCapture::HandleGraphEvent(void)
         // event parameter data.  While this application is not interested
         // in the received events, applications should always process them.
         //
-        hr = pVideoMediaEvent_->FreeEventParams(evCode, evParam1, evParam2);
+        hr = pMediaEvent_->FreeEventParams(evCode, evParam1, evParam2);
     }
 
     return hr;
@@ -1591,26 +1718,26 @@ HRESULT CameraCapture::ChangePreviewState(PLAY_STATE playState /* = PLAY_STATE::
     HRESULT hr = E_FAIL;
 
     // If the media control interface isn't ready, don't call it
-    if (!pVideoMediaControl_)
+    if (!pMediaControl_)
         return E_FAIL;
 
     if (playState == PLAY_STATE::Running) {
         if (playState_ != PLAY_STATE::Running) {
             // Start previewing video data
-            hr = pVideoMediaControl_->Run();
+            hr = pMediaControl_->Run();
             playState_ = playState;
         }
     }
     else if (playState == PLAY_STATE::Paused) {
         // Pause previewing video data
         if (playState_ != PLAY_STATE::Paused) {
-            hr = pVideoMediaControl_->Pause();
+            hr = pMediaControl_->Pause();
             playState_ = playState;
         }
     }
     else {
         // Stop previewing video data
-        hr = pVideoMediaControl_->StopWhenReady();
+        hr = pMediaControl_->StopWhenReady();
         //hr = pVideoMediaControl_->Stop();
         playState_ = playState;
     }
@@ -1621,10 +1748,10 @@ HRESULT CameraCapture::ChangePreviewState(PLAY_STATE playState /* = PLAY_STATE::
 // 关闭摄像头
 bool CameraCapture::StopCurrentOperating(int action_type)
 {
-    if (pVideoMediaControl_ == nullptr)
+    if (pMediaControl_ == nullptr)
         return false;
 
-    HRESULT hr = pVideoMediaControl_->Stop();
+    HRESULT hr = pMediaControl_->Stop();
     if (FAILED(hr))
         return false;
 
@@ -1637,8 +1764,8 @@ bool CameraCapture::StopCurrentOperating(int action_type)
 
     if (pVideoWindow_)
         pVideoWindow_->Release();
-    if (pVideoMediaControl_)
-        pVideoMediaControl_->Release();
+    if (pMediaControl_)
+        pMediaControl_->Release();
     if (pFilterGraph_)
         pFilterGraph_->Release();
     return true;
@@ -1647,10 +1774,10 @@ bool CameraCapture::StopCurrentOperating(int action_type)
 // 暂停播放本地视频
 bool CameraCapture::PausePlayingLocalVideo()
 {
-    if (pVideoMediaControl_ == nullptr)
+    if (pMediaControl_ == nullptr)
         return false;
 
-    HRESULT hr = pVideoMediaControl_->Stop();
+    HRESULT hr = pMediaControl_->Stop();
     if (hr < 0)
         return false;
     else
@@ -1660,10 +1787,10 @@ bool CameraCapture::PausePlayingLocalVideo()
 // 继续播放本地视频
 bool CameraCapture::ContinuePlayingLocalVideo()
 {
-    if (pVideoMediaControl_ == nullptr)
+    if (pMediaControl_ == nullptr)
         return false;
 
-    HRESULT hr = pVideoMediaControl_->Run();
+    HRESULT hr = pMediaControl_->Run();
     if (FAILED(hr))
         return false;
     else

@@ -142,10 +142,12 @@ public:
         Paused
     };
 
-    HRESULT CreateEnv();
     HRESULT Close();
     void OnClose();
     void Release();
+
+    HRESULT CreateEnv();
+    void FreeEnv();
 
     HRESULT InitCaptureFilters();
     void FreeCaptureFilters();
@@ -159,6 +161,22 @@ public:
         return hwndPreview_;
     }
     HWND SetPreviewHwnd(HWND hwndPreview, bool bAttachTo = false);
+
+    bool GetWantPreview() const {
+        return wantPreview_;
+    }
+
+    bool GetWantCapture() const {
+        return wantCapture_;
+    }
+
+    void SetWantPreview(bool wantPreview) {
+        wantPreview_ = wantPreview;
+    }
+
+    void SetWantCapture(bool wantCapture) {
+        wantCapture_ = wantCapture;
+    }
 
     PLAY_STATE GetPlayState() const {
         return playState_;
@@ -203,6 +221,9 @@ public:
     // 根据选择的设备绑定 Audio Capture Filter
     HRESULT BindAudioFilter(const TCHAR * audioDevice);
 
+    HRESULT QueryVideoDevice(const TCHAR * videoDevice, IMoniker ** pVideoMoniker);
+    HRESULT QueryAudioDevice(const TCHAR * audioDevice, IMoniker ** pAudioMoniker);
+
     HRESULT StartPreview();
     HRESULT StopPreview();
 
@@ -224,7 +245,7 @@ public:
     bool ContinuePlayingLocalVideo();
 
 protected:
-    void InitEnv();
+    void InitEnv(HWND hwndPreview);
 
     static const TCHAR * GetDeviceType(bool isVideo);
     static const wchar_t * GetDeviceFilterName(bool isVideo);
@@ -252,8 +273,8 @@ private:
 
     IBaseFilter *           pVideoMux_;             // Video file muxer (用于保存视频文件)
     IVideoWindow *          pVideoWindow_;          // 视频播放窗口
-    IMediaControl *         pVideoMediaControl_;    // 摄像头流媒体的控制开关（控制其开始、暂停、结束）
-    IMediaEventEx *         pVideoMediaEvent_;      // 摄像头流媒体的控制事件
+    IMediaControl *         pMediaControl_;         // 流媒体的控制开关（控制其开始、暂停、结束）
+    IMediaEventEx *         pMediaEvent_;           // 流媒体的控制事件
 
     IMoniker *              pVideoMoniker_;         // Video 设备
     IMoniker *              pAudioMoniker_;         // Audio 设备
@@ -274,6 +295,7 @@ private:
     VideoCaptureCB *        pVideoCaptureCallback_;
     AudioCaptureCB *        pAudioCaptureCallback_;
 
+    bool    envInited_;
     bool    previewGraphBuilt_;
     bool    captureGraphBuilt_;
 
@@ -289,6 +311,9 @@ private:
 
     long    nDroppedBase_;
     long    nNotDroppedBase_;
+
+    long    nVideoWidth_;
+    long    nVideoHeight_;
 
     std::tstring videoDevice_;
     std::tstring audioDevice_;
