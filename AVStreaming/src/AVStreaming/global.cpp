@@ -2,7 +2,7 @@
 #include "stdafx.h"
 #include "global.h"
 
-#ifdef _DEBUG
+#ifdef NDEBUG
 av::StdFileLogT console;
 #else
 av::OutputDebugConsoleT console;

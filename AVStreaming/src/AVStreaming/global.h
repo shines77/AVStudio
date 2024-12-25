@@ -2,7 +2,7 @@
 
 #include "AVConsole.h"
 
-#ifdef _DEBUG
+#ifdef NDEBUG
 extern av::StdFileLogT console;
 #else
 extern av::OutputDebugConsoleT console;
