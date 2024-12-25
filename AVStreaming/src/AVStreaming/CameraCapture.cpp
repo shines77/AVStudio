@@ -7,8 +7,13 @@
 #endif
 #include <windows.h>
 
+#include <comdef.h>
+#include <strmif.h>
 #include <atlcomcli.h>      // For CComPtr<T>
 #include <atlconv.h>
+//#include <Ks.h>
+//#include <KsProxy.h>
+#include <wmcodecdsp.h>
 #include <math.h>
 #include <assert.h>
 
@@ -61,7 +66,7 @@ CameraCapture::CameraCapture(HWND hwndPreview /* = NULL */)
 void IMonikerRelease(IMoniker *& pMoniker)
 {
     if (pMoniker) {
-        pMoniker->Release();
+        ULONG cnt = pMoniker->Release();
         pMoniker = nullptr;
     }
 }
@@ -144,8 +149,8 @@ void CameraCapture::Release()
     SAFE_COM_RELEASE(pAudioSampleGrabber_);
 
     // ISampleGrabberCB instance
-    SAFE_OBJECT_DELETE(pVideoCaptureCallback_);
-    SAFE_OBJECT_DELETE(pAudioCaptureCallback_);
+    //SAFE_OBJECT_DELETE(pVideoCaptureCallback_);
+    //SAFE_OBJECT_DELETE(pAudioCaptureCallback_);
 
     SAFE_COM_RELEASE(pFilterGraph_);
     SAFE_COM_RELEASE(pCaptureBuilder_);
@@ -158,41 +163,23 @@ HRESULT CameraCapture::CreateEnv()
     if (envInited_)
         return S_OK;
 
-    HRESULT hr;
+    HRESULT hr = S_OK;
 
     // 创建 filter graph manager
-    SAFE_COM_RELEASE(pFilterGraph_);
-    hr = CoCreateInstance(CLSID_FilterGraph, NULL, CLSCTX_INPROC_SERVER,
-                          IID_IGraphBuilder, (void**)&pFilterGraph_);
-    if (FAILED(hr))
-        return hr;
+    if (pFilterGraph_ == nullptr) {
+        hr = CoCreateInstance(CLSID_FilterGraph, NULL, CLSCTX_INPROC_SERVER,
+                              IID_IGraphBuilder, (void **)&pFilterGraph_);
+        if (FAILED(hr))
+            return hr;
+    }
 
     // 创建 capture graph builder
-    SAFE_COM_RELEASE(pCaptureBuilder_);
-    hr = CoCreateInstance(CLSID_CaptureGraphBuilder2, NULL, CLSCTX_INPROC_SERVER,
-                          IID_ICaptureGraphBuilder2, (void**)&pCaptureBuilder_);
-    if (FAILED(hr))
-        return hr;
-
-#if 0
-    // 创建视频播放窗口
-    SAFE_COM_RELEASE(pVideoWindow_);
-    hr = pFilterGraph_->QueryInterface(IID_IVideoWindow, (void **)&pVideoWindow_);
-    if (FAILED(hr))
-        return hr;  
-
-    // 创建流媒体的控制开关
-    SAFE_COM_RELEASE(pMediaControl_);
-    hr = pFilterGraph_->QueryInterface(IID_IMediaControl, (void **)&pMediaControl_);
-    if (FAILED(hr))
-        return hr;
-
-    // 创建流媒体的控制事件
-    SAFE_COM_RELEASE(pMediaEvent_);
-    hr = pFilterGraph_->QueryInterface(IID_IMediaEventEx, (void **)&pMediaEvent_);
-    if (FAILED(hr))
-        return hr;
-#endif
+    if (pCaptureBuilder_ == nullptr) {
+        hr = CoCreateInstance(CLSID_CaptureGraphBuilder2, NULL, CLSCTX_INPROC_SERVER,
+                              IID_ICaptureGraphBuilder2, (void **)&pCaptureBuilder_);
+        if (FAILED(hr))
+            return hr;
+    }
 
     // 为 capture graph 指定要使用的 filter graph
     if (pCaptureBuilder_ != NULL && pFilterGraph_ != NULL) {
@@ -201,11 +188,15 @@ HRESULT CameraCapture::CreateEnv()
             return hr;
     }
 
-    SAFE_OBJECT_DELETE(pVideoCaptureCallback_);
-    pVideoCaptureCallback_ = new VideoCaptureCB;
+    if (pVideoCaptureCallback_ == nullptr) {
+        pVideoCaptureCallback_ = new VideoCaptureCB;
+        pVideoCaptureCallback_->AddRef();
+    }
 
-    SAFE_OBJECT_DELETE(pAudioCaptureCallback_);
-    pAudioCaptureCallback_ = new AudioCaptureCB;
+    if (pAudioCaptureCallback_ == nullptr) {
+        pAudioCaptureCallback_ = new AudioCaptureCB;
+        pAudioCaptureCallback_->AddRef();
+    }
 
     envInited_ = true;
     return hr;
@@ -214,271 +205,20 @@ HRESULT CameraCapture::CreateEnv()
 void CameraCapture::FreeEnv()
 {
     // ISampleGrabberCB instance
-    SAFE_OBJECT_DELETE(pVideoCaptureCallback_);
-    SAFE_OBJECT_DELETE(pAudioCaptureCallback_);
+    ULONG ref_cnt;
+    if (pVideoCaptureCallback_) {
+        ref_cnt = pVideoCaptureCallback_->Release();
+        pVideoCaptureCallback_ = nullptr;
+    }
+    if (pAudioCaptureCallback_) {
+        ref_cnt = pAudioCaptureCallback_->Release();
+        pAudioCaptureCallback_ = nullptr;
+    }
 
     SAFE_COM_RELEASE(pFilterGraph_);
     SAFE_COM_RELEASE(pCaptureBuilder_);
 
     envInited_ = false;
-}
-
-HRESULT CameraCapture::InitCaptureFilters()
-{
-    HRESULT hr = S_OK;
-
-    if (!envInited_) {
-        hr = CreateEnv();
-        if (hr != S_OK) {
-            console.error(_T("Failed to call CreateEnv(): %x"), hr);
-            goto InitCapFiltersFail;
-        }
-    }
-
-    //
-    // First, we need a Video Capture filter, and some interfaces
-    //
-    if (pVideoMoniker_ != nullptr) {
-        if (pVideoFilter_ == nullptr) {
-            hr = pVideoMoniker_->BindToObject(0, 0, IID_IBaseFilter, (void **)&pVideoFilter_);
-            if (SUCCEEDED(hr) && (pVideoFilter_ != nullptr)) {
-                // Add the video capture filter to the graph with its friendly name
-                hr = pFilterGraph_->AddFilter(pVideoFilter_, L"Video Filter");
-                if (hr != NOERROR) {
-                    console.error(_T("Error %x: Cannot add video capture filter to filtergraph"), hr);
-                    goto InitCapFiltersFail;
-                }
-            }
-        }
-    }
-
-    if (pVideoFilter_ == nullptr) {
-        // There are no video capture devices.
-        captureVideo_ = false;
-
-        console.error(_T("Error %x: Cannot create video capture filter"), hr);
-        goto InitCapFiltersFail;
-    }
-
-    hr = InitVideoSampleGrabber();
-    if (FAILED(hr)) {
-        goto InitCapFiltersFail;
-    }
-
-    // We use this interface to get the name of the driver
-    // Don't worry if it doesn't work:  This interface may not be available
-    // until the pin is connected, or it may not be available at all.
-    // (eg: interface may not be available for some DV capture)
-    SAFE_COM_RELEASE(pVideoCompression_);
-    hr = pCaptureBuilder_->FindInterface(&PIN_CATEGORY_CAPTURE,
-                                         &MEDIATYPE_Interleaved, pVideoFilter_,
-                                         IID_IAMVideoCompression, (void **)&pVideoCompression_);
-    if (hr != S_OK) {
-        hr = pCaptureBuilder_->FindInterface(&PIN_CATEGORY_CAPTURE,
-                                             &MEDIATYPE_Video, pVideoFilter_,
-                                             IID_IAMVideoCompression, (void **)&pVideoCompression_);
-    }
-
-    // !!! What if this interface isn't supported?
-    // We use this interface to set the frame rate and get the capture size
-    SAFE_COM_RELEASE(pVideoStreamConfig_);
-    hr = pCaptureBuilder_->FindInterface(&PIN_CATEGORY_CAPTURE,
-                                         &MEDIATYPE_Interleaved, pVideoFilter_,
-                                         IID_IAMStreamConfig, (void **)&pVideoStreamConfig_);
-
-    if (hr != NOERROR) {
-        hr = pCaptureBuilder_->FindInterface(&PIN_CATEGORY_CAPTURE,
-                                             &MEDIATYPE_Video, pVideoFilter_,
-                                             IID_IAMStreamConfig, (void **)&pVideoStreamConfig_);
-        if (hr != NOERROR) {
-            // This means we can't set frame rate (non-DV only)
-            console.error(_T("Error %x: Cannot find VideoCapture::IAMStreamConfig"), hr);
-        }
-    }
-
-    captureAudioIsRelevant_ = true;
-    AM_MEDIA_TYPE * pmt = nullptr;
-
-    // Default capture format
-    if (pVideoStreamConfig_ && pVideoStreamConfig_->GetFormat(&pmt) == S_OK) {
-        // DV capture does not use a VIDEOINFOHEADER
-        if (pmt->formattype == FORMAT_VideoInfo) {
-            // Resize our window to the default capture size
-            if (pmt->pbFormat != nullptr) {
-                ResizeVideoWindow(HEADER(pmt->pbFormat)->biWidth,
-                                  abs(HEADER(pmt->pbFormat)->biHeight));
-            }
-        }
-        if (pmt->majortype != MEDIATYPE_Video) {
-            // This capture filter captures something other that pure video.
-            // Maybe it's DV or something?  Anyway, chances are we shouldn't
-            // allow capturing audio separately, since our video capture
-            // filter may have audio combined in it already!
-            captureAudio_ = false;
-            captureAudioIsRelevant_ = false;
-        }
-        DeleteMediaType(pmt);
-    }
-
-    // There's no point making an audio capture filter
-    if (captureAudioIsRelevant_) {
-        // Create the audio capture filter, even if we are not capturing audio right
-        // now, so we have all the filters around all the time.
-
-        //
-        // We want an audio capture filter and some interfaces
-        //
-        if (pAudioMoniker_ != nullptr) {
-            if (pAudioFilter_ == nullptr) {
-                hr = pAudioMoniker_->BindToObject(0, 0, IID_IBaseFilter, (void **)&pAudioFilter_);
-                if (SUCCEEDED(hr) && (pAudioFilter_ != nullptr)) {
-                    // We'll need this in the graph to get audio property pages
-                    hr = pFilterGraph_->AddFilter(pAudioFilter_, L"Audio Filter");
-                    if (hr != NOERROR) {
-                        console.error(_T("Error %x: Cannot add audio capture filter to filtergraph"), hr);
-                        goto InitCapFiltersFail;
-                    }
-                }
-                else {
-                    // There are no audio capture devices. We'll only allow video capture
-                    captureAudio_ = false;
-                    console.error(_T("Error: %x, Cannot create audio capture filter"), hr);
-                    goto SkipAudio;
-                }
-            }
-
-            if (pAudioFilter_ != nullptr) {
-                // !!! What if this interface isn't supported?
-                // We use this interface to set the captured wave format
-                hr = pCaptureBuilder_->FindInterface(&PIN_CATEGORY_CAPTURE, &MEDIATYPE_Audio, pAudioFilter_,
-                                                        IID_IAMStreamConfig, (void **)&pAudioStreamConfig_);
-                if (hr != NOERROR) {
-                    console.error(_T("Cannot find AudioCapture::IAMStreamConfig"));
-                }
-
-                hr = InitAudioSampleGrabber();
-                if (FAILED(hr)) {
-                    goto InitCapFiltersFail;
-                }
-            }
-        }
-        else {
-            // There are no audio capture devices. We'll only allow video capture
-            captureAudio_ = false;
-        }
-    }
-
-SkipAudio:
-    return hr;
-
-InitCapFiltersFail:
-    FreeCaptureFilters();
-    return E_FAIL;
-}
-
-//
-// All done with the capture filters and the graph builder
-//
-void CameraCapture::FreeCaptureFilters()
-{
-    if (pVideoSampleGrabber_) {
-        pVideoSampleGrabber_->SetCallback(NULL, 1);
-    }
-    if (pAudioSampleGrabber_) {
-        pAudioSampleGrabber_->SetCallback(NULL, 1);
-    }
-
-    SAFE_COM_RELEASE(pVideoFilter_);
-    SAFE_COM_RELEASE(pAudioFilter_);
-
-    SAFE_COM_RELEASE(pVideoGrabberFilter_);
-    SAFE_COM_RELEASE(pAudioGrabberFilter_);
-
-    SAFE_COM_RELEASE(pVideoSampleGrabber_);
-    SAFE_COM_RELEASE(pAudioSampleGrabber_);
-
-    SAFE_COM_RELEASE(pVideoStreamConfig_);
-    SAFE_COM_RELEASE(pAudioStreamConfig_);
-    SAFE_COM_RELEASE(pVideoCompression_);
-
-    SAFE_COM_RELEASE(pMediaControl_);
-    SAFE_COM_RELEASE(pMediaEvent_);
-}
-
-HRESULT CameraCapture::InitVideoSampleGrabber()
-{
-    HRESULT hr = E_FAIL;
-
-    // Create video grabber filter
-    SAFE_COM_RELEASE(pVideoGrabberFilter_);
-    hr = CoCreateInstance(CLSID_SampleGrabber, NULL, CLSCTX_INPROC_SERVER,
-                          IID_IBaseFilter, (void **)&pVideoGrabberFilter_);
-    if (FAILED(hr)) {
-        console.error(_T("Create video grabber filter failed. Error: %x"), hr);
-        return hr;
-    }
-    if (pVideoGrabberFilter_ != nullptr) {
-        SAFE_COM_RELEASE(pVideoSampleGrabber_);
-        hr = pVideoGrabberFilter_->QueryInterface(IID_ISampleGrabber, (void **)&(pVideoSampleGrabber_));
-        if (FAILED(hr)) {
-            console.error(_T("Query interface video sample grabber failed. Error: %x"), hr);
-            return hr;
-        }
-        if (pVideoSampleGrabber_ != nullptr) {
-            hr = pVideoSampleGrabber_->SetBufferSamples(FALSE);
-            if (FAILED(hr)) {
-                console.error(_T("Set video buffer samples failed. Error: %x"), hr);
-                return hr;
-            }
-        }
-        if (pFilterGraph_ != nullptr) {
-            hr = pFilterGraph_->AddFilter(pVideoGrabberFilter_, L"Video Grabber Filter");
-            if (FAILED(hr)) {
-                console.error(_T("AddFilter video sample grabber failed. Error: %x"), hr);
-                return hr;
-            }
-        }
-    }
-
-    return hr;
-}
-
-HRESULT CameraCapture::InitAudioSampleGrabber()
-{
-    HRESULT hr = E_FAIL;
-
-    // Create audio grabber filter
-    SAFE_COM_RELEASE(pAudioGrabberFilter_);
-    hr = CoCreateInstance(CLSID_SampleGrabber, NULL, CLSCTX_INPROC_SERVER,
-                          IID_IBaseFilter, (void **)&pAudioGrabberFilter_);
-    if (FAILED(hr)) {
-        console.error(_T("Create audio grabber filter failed. Error: %x"), hr);
-        return hr;
-    }
-    if (pAudioGrabberFilter_ != nullptr) {
-        SAFE_COM_RELEASE(pAudioSampleGrabber_);
-        hr = pAudioGrabberFilter_->QueryInterface(IID_ISampleGrabber, (void **)&(pAudioSampleGrabber_));
-        if (FAILED(hr)) {
-            console.error(_T("Query interface audio sample grabber failed. Error: %x"), hr);
-            return hr;
-        }
-        if (pAudioSampleGrabber_ != nullptr) {
-            hr = pAudioSampleGrabber_->SetBufferSamples(FALSE);
-            if (FAILED(hr)) {
-                console.error(_T("Set audio buffer samples failed. Error: %x"), hr);
-                return hr;
-            }
-        }
-        if (pFilterGraph_ != nullptr) {
-            hr = pFilterGraph_->AddFilter(pAudioGrabberFilter_, L"Audio Grabber Filter");
-            if (FAILED(hr)) {
-                console.error(_T("AddFilter audio sample grabber failed. Error: %x"), hr);
-                return hr;
-            }
-        }
-    }
-
-    return hr;
 }
 
 void CameraCapture::ChooseDevices(IMoniker * pVideoMoniker,
@@ -487,10 +227,10 @@ void CameraCapture::ChooseDevices(IMoniker * pVideoMoniker,
     // We chose a new device. rebuild the graphs
     if (pVideoMoniker != pVideoMoniker_ || pAudioMoniker != pAudioMoniker_) {
         if (pVideoMoniker) {
-            pVideoMoniker->AddRef();
+            ULONG cnt = pVideoMoniker->AddRef();
         }
         if (pAudioMoniker) {
-            pAudioMoniker->AddRef();
+            ULONG cnt = pAudioMoniker->AddRef();
         }
 
         IMonikerRelease(pVideoMoniker_);
@@ -549,13 +289,16 @@ void CameraCapture::ChooseDevices(IMoniker * pVideoMoniker,
 void CameraCapture::ChooseDevices(const TCHAR * videoDevice,
                                   const TCHAR * audioDevice)
 {
-    WCHAR szVideoDevice[1024], szAudioDevice[1024];
+    WCHAR szVideoDevice[1024] = { 0 }, szAudioDevice[1024] = { 0 };
+
+    //console.info(_T("ChooseDevices() Enter: video = %s, audio = %s"),
+    //             videoDevice, audioDevice);
 
     szVideoDevice[0] = szAudioDevice[0] = 0;
     if (videoDevice) {
         StringCchCopyN(szVideoDevice, NUMELMS(szVideoDevice), videoDevice, NUMELMS(szVideoDevice) - 1);
     }
-    if (videoDevice) {
+    if (audioDevice) {
         StringCchCopyN(szAudioDevice, NUMELMS(szAudioDevice), audioDevice, NUMELMS(szAudioDevice) - 1);
     }
     // Null-terminate
@@ -642,6 +385,383 @@ void CameraCapture::ChooseDevices(const TCHAR * videoDevice,
 
     IMonikerRelease(pVideoMoniker);
     IMonikerRelease(pAudioMoniker);
+}
+
+HRESULT CameraCapture::InitCaptureFilters()
+{
+    HRESULT hr = S_OK;
+
+    if (!envInited_) {
+        hr = CreateEnv();
+        if (hr != S_OK) {
+            console.error(_T("Failed to call CreateEnv(): %x"), hr);
+            goto InitCapFiltersFail;
+        }
+    }
+
+    //
+    // First, we need a Video Capture filter, and some interfaces
+    //
+    if (pVideoMoniker_ != nullptr) {
+        if (pVideoFilter_ == nullptr) {
+            hr = pVideoMoniker_->BindToObject(0, 0, IID_IBaseFilter, (void **)&pVideoFilter_);
+            if (SUCCEEDED(hr) && (pVideoFilter_ != nullptr)) {
+                // Add the video capture filter to the graph with its friendly name
+                hr = pFilterGraph_->AddFilter(pVideoFilter_, L"Video Filter");
+                if (hr != NOERROR) {
+                    console.error(_T("Error %x: Cannot add video capture filter to filtergraph"), hr);
+                    goto InitCapFiltersFail;
+                }
+            }
+        }
+    }
+
+    if (pVideoFilter_ == nullptr) {
+        // There are no video capture devices.
+        captureVideo_ = false;
+
+        console.error(_T("Error %x: Cannot create video capture filter"), hr);
+        goto InitCapFiltersFail;
+    }
+
+    if (wantCapture_) {
+        hr = InitVideoSampleGrabber();
+        if (FAILED(hr)) {
+            goto InitCapFiltersFail;
+        }
+#if 0
+        hr = ConnectVideoFilter();
+        if (FAILED(hr)) {
+            goto InitCapFiltersFail;
+        }
+#endif
+    }
+
+    // We use this interface to get the name of the driver
+    // Don't worry if it doesn't work:  This interface may not be available
+    // until the pin is connected, or it may not be available at all.
+    // (eg: interface may not be available for some DV capture)
+    SAFE_COM_RELEASE(pVideoCompression_);
+    hr = pCaptureBuilder_->FindInterface(&PIN_CATEGORY_CAPTURE,
+                                         &MEDIATYPE_Interleaved, pVideoFilter_,
+                                         IID_IAMVideoCompression, (void **)&pVideoCompression_);
+    if (hr != S_OK) {
+        hr = pCaptureBuilder_->FindInterface(&PIN_CATEGORY_CAPTURE,
+                                             &MEDIATYPE_Video, pVideoFilter_,
+                                             IID_IAMVideoCompression, (void **)&pVideoCompression_);
+    }
+
+    // !!! What if this interface isn't supported?
+    // We use this interface to set the frame rate and get the capture size
+    SAFE_COM_RELEASE(pVideoStreamConfig_);
+    hr = pCaptureBuilder_->FindInterface(&PIN_CATEGORY_CAPTURE,
+                                         &MEDIATYPE_Interleaved, pVideoFilter_,
+                                         IID_IAMStreamConfig, (void **)&pVideoStreamConfig_);
+
+    if (hr != NOERROR) {
+        hr = pCaptureBuilder_->FindInterface(&PIN_CATEGORY_CAPTURE,
+                                             &MEDIATYPE_Video, pVideoFilter_,
+                                             IID_IAMStreamConfig, (void **)&pVideoStreamConfig_);
+        if (hr != NOERROR) {
+            // This means we can't set frame rate (non-DV only)
+            console.error(_T("Error %x: Cannot find VideoCapture::IAMStreamConfig"), hr);
+        }
+    }
+
+    captureAudioIsRelevant_ = true;
+    AM_MEDIA_TYPE * pmt = nullptr;
+
+    // Default capture format
+    if (pVideoStreamConfig_ && pVideoStreamConfig_->GetFormat(&pmt) == S_OK) {
+        // DV capture does not use a VIDEOINFOHEADER
+        if (pmt->formattype == FORMAT_VideoInfo) {
+            // Resize our window to the default capture size
+            if (pmt->pbFormat != nullptr) {
+                ResizeVideoWindow(HEADER(pmt->pbFormat)->biWidth,
+                                  abs(HEADER(pmt->pbFormat)->biHeight));
+            }
+        }
+        if (pmt->majortype != MEDIATYPE_Video) {
+            // This capture filter captures something other that pure video.
+            // Maybe it's DV or something?  Anyway, chances are we shouldn't
+            // allow capturing audio separately, since our video capture
+            // filter may have audio combined in it already!
+            captureAudio_ = false;
+            captureAudioIsRelevant_ = false;
+        }
+        if (pmt->subtype == MEDIASUBTYPE_RGB24 || pmt->subtype == MEDIASUBTYPE_YUY2) {
+            pmt->subtype = pmt->subtype;
+        }
+        DeleteMediaType(pmt);
+    }
+
+    // There's no point making an audio capture filter
+    if (captureAudioIsRelevant_) {
+        // Create the audio capture filter, even if we are not capturing audio right
+        // now, so we have all the filters around all the time.
+
+        //
+        // We want an audio capture filter and some interfaces
+        //
+        if (pAudioMoniker_ != nullptr) {
+            if (pAudioFilter_ == nullptr) {
+                hr = pAudioMoniker_->BindToObject(0, 0, IID_IBaseFilter, (void **)&pAudioFilter_);
+                if (SUCCEEDED(hr) && (pAudioFilter_ != nullptr)) {
+                    // We'll need this in the graph to get audio property pages
+                    hr = pFilterGraph_->AddFilter(pAudioFilter_, L"Audio Filter");
+                    if (hr != NOERROR) {
+                        console.error(_T("Error %x: Cannot add audio capture filter to filtergraph"), hr);
+                        goto InitCapFiltersFail;
+                    }
+                }
+                else {
+                    // There are no audio capture devices. We'll only allow video capture
+                    captureAudio_ = false;
+                    console.error(_T("Error: 0x%x, Cannot create audio capture filter"), hr);
+                    goto SkipAudio;
+                }
+            }
+
+            if (pAudioFilter_ != nullptr) {
+                // !!! What if this interface isn't supported?
+                // We use this interface to set the captured wave format
+                hr = pCaptureBuilder_->FindInterface(&PIN_CATEGORY_CAPTURE, &MEDIATYPE_Audio, pAudioFilter_,
+                                                        IID_IAMStreamConfig, (void **)&pAudioStreamConfig_);
+                if (hr != NOERROR) {
+                    console.error(_T("Cannot find AudioCapture::IAMStreamConfig"));
+                }
+                else {
+                    // Default audio format
+                    if (pAudioStreamConfig_ && pAudioStreamConfig_->GetFormat(&pmt) == S_OK) {
+                        // DV capture does not use a VIDEOINFOHEADER
+                        if (pmt->formattype == FORMAT_WaveFormatEx) {
+                            // Resize our window to the default capture size
+                            if (pmt->pbFormat != nullptr) {
+                                //
+                            }
+                        }
+                        if (pmt->majortype != MEDIATYPE_Audio) {
+                            // This capture filter captures something other that pure video.
+                            // Maybe it's DV or something?  Anyway, chances are we shouldn't
+                            // allow capturing audio separately, since our video capture
+                            // filter may have audio combined in it already!
+                            captureAudio_ = false;
+                            captureAudioIsRelevant_ = false;
+                        }
+                        if (pmt->subtype == MEDIASUBTYPE_PCM) {
+                            pmt->subtype = pmt->subtype;
+                        }
+                        DeleteMediaType(pmt);
+                    }
+                }
+
+                if (0 && wantCapture_) {
+                    hr = InitAudioSampleGrabber();
+                    if (FAILED(hr)) {
+                        goto InitCapFiltersFail;
+                    }
+                }
+            }
+        }
+        else {
+            // There are no audio capture devices. We'll only allow video capture
+            captureAudio_ = false;
+        }
+    }
+
+SkipAudio:
+    return hr;
+
+InitCapFiltersFail:
+    FreeCaptureFilters();
+    return E_FAIL;
+}
+
+//
+// All done with the capture filters and the graph builder
+//
+void CameraCapture::FreeCaptureFilters()
+{
+    if (pVideoSampleGrabber_) {
+        pVideoSampleGrabber_->SetCallback(NULL, 1);
+    }
+    if (pAudioSampleGrabber_) {
+        pAudioSampleGrabber_->SetCallback(NULL, 1);
+    }
+
+    // Reset video size
+    nVideoWidth_ = -1;
+    nVideoHeight_ = -1;
+
+    SAFE_COM_RELEASE(pVideoFilter_);
+    SAFE_COM_RELEASE(pAudioFilter_);
+
+    SAFE_COM_RELEASE(pVideoGrabberFilter_);
+    SAFE_COM_RELEASE(pAudioGrabberFilter_);
+
+    SAFE_COM_RELEASE(pVideoSampleGrabber_);
+    SAFE_COM_RELEASE(pAudioSampleGrabber_);
+
+    SAFE_COM_RELEASE(pVideoStreamConfig_);
+    SAFE_COM_RELEASE(pAudioStreamConfig_);
+    SAFE_COM_RELEASE(pVideoCompression_);
+
+    SAFE_COM_RELEASE(pMediaControl_);
+    SAFE_COM_RELEASE(pMediaEvent_);
+}
+
+HRESULT CameraCapture::InitVideoSampleGrabber()
+{
+    HRESULT hr = E_FAIL;
+
+    // Create video grabber filter
+    SAFE_COM_RELEASE(pVideoGrabberFilter_);
+    hr = CoCreateInstance(CLSID_SampleGrabber, NULL, CLSCTX_INPROC_SERVER,
+                          IID_IBaseFilter, (void **)&pVideoGrabberFilter_);
+    if (FAILED(hr)) {
+        console.error(_T("Create video grabber filter failed. Error: 0x%x"), hr);
+        return hr;
+    }
+    if (pVideoGrabberFilter_ != nullptr) {
+        SAFE_COM_RELEASE(pVideoSampleGrabber_);
+        hr = pVideoGrabberFilter_->QueryInterface(IID_ISampleGrabber, (void **)&pVideoSampleGrabber_);
+        if (FAILED(hr)) {
+            console.error(_T("Query interface video sample grabber failed. Error: 0x%x"), hr);
+            return hr;
+        }
+        if (pVideoSampleGrabber_ != nullptr) {
+            hr = pVideoSampleGrabber_->SetBufferSamples(FALSE);
+            if (FAILED(hr)) {
+                console.error(_T("Set video buffer samples failed. Error: 0x%x"), hr);
+                return hr;
+            }
+        }
+        if (pFilterGraph_ != nullptr) {
+            hr = pFilterGraph_->AddFilter(pVideoGrabberFilter_, L"Video Grabber Filter");
+            if (FAILED(hr)) {
+                console.error(_T("AddFilter video sample grabber failed. Error: 0x%x"), hr);
+                return hr;
+            }
+        }
+    }
+
+    return hr;
+}
+
+HRESULT CameraCapture::InitAudioSampleGrabber()
+{
+    HRESULT hr = E_FAIL;
+
+    // Create audio grabber filter
+    SAFE_COM_RELEASE(pAudioGrabberFilter_);
+    hr = CoCreateInstance(CLSID_SampleGrabber, NULL, CLSCTX_INPROC_SERVER,
+                          IID_IBaseFilter, (void **)&pAudioGrabberFilter_);
+    if (FAILED(hr)) {
+        console.error(_T("Create audio grabber filter failed. Error: 0x%x"), hr);
+        return hr;
+    }
+    if (pAudioGrabberFilter_ != nullptr) {
+        SAFE_COM_RELEASE(pAudioSampleGrabber_);
+        hr = pAudioGrabberFilter_->QueryInterface(IID_ISampleGrabber, (void **)&pAudioSampleGrabber_);
+        if (FAILED(hr)) {
+            console.error(_T("Query interface audio sample grabber failed. Error: 0x%x"), hr);
+            return hr;
+        }
+        if (pAudioSampleGrabber_ != nullptr) {
+            hr = pAudioSampleGrabber_->SetBufferSamples(FALSE);
+            if (FAILED(hr)) {
+                console.error(_T("Set audio buffer samples failed. Error: 0x%x"), hr);
+                return hr;
+            }
+        }
+        if (pFilterGraph_ != nullptr) {
+            hr = pFilterGraph_->AddFilter(pAudioGrabberFilter_, L"Audio Grabber Filter");
+            if (FAILED(hr)) {
+                console.error(_T("AddFilter audio sample grabber failed. Error: 0x%x"), hr);
+                return hr;
+            }
+        }
+    }
+
+    return hr;
+}
+
+HRESULT GetUnconnectedPin(IBaseFilter * pFilter, PIN_DIRECTION inPinDir, IPin ** ppPin)
+{
+    assert(pFilter != nullptr);
+	IEnumPins * pEnum = NULL;
+	HRESULT hr = pFilter->EnumPins(&pEnum);
+	if (FAILED(hr))
+        return hr;
+
+	IPin * pPin = NULL;
+    BOOL found = FALSE;
+
+	while (pEnum->Next(1, &pPin, NULL) == S_OK) {
+		IPin * pTmpPin = NULL;        
+		hr = pPin->ConnectedTo(&pTmpPin);
+		if (SUCCEEDED(hr)) {
+            // Already connected, not the pin we want.
+			SAFE_COM_RELEASE(pTmpPin);
+		}
+		else if (hr == VFW_E_NOT_CONNECTED) {
+            // The pin is not connected. This is not an error for our purposes.
+		    PIN_DIRECTION pinDir;
+		    hr = pPin->QueryDirection(&pinDir);
+            if (SUCCEEDED(hr)) {
+		        if (pinDir == inPinDir) {
+                    // The first unconnected pin of the specified type
+                    // Because we don't Release(), so we needn't AddRef() too.
+                    // pPin->AddRef();
+			        *ppPin = pPin;
+                    found = TRUE;
+                    break;
+		        }
+            }
+		}
+		SAFE_COM_RELEASE(pPin);
+	}
+
+	SAFE_COM_RELEASE(pEnum);
+	return (found) ? S_OK : VFW_E_NOT_FOUND;
+}
+
+HRESULT CameraCapture::ConnectVideoFilter()
+{
+    HRESULT hr = E_FAIL;
+
+    if (pVideoFilter_ == nullptr || pVideoGrabberFilter_ == nullptr)
+        return E_INVALIDARG;
+    
+    hr = FindUnconnectedPin(pVideoFilter_, PINDIR_OUTPUT, &pPinOutVideoCapture_);
+    if (FAILED(hr)) {
+        console.error(_T("Get capture output pin failed. Error: 0x%x"), hr);
+        goto error_exit;
+    }
+
+    hr = FindUnconnectedPin(pVideoGrabberFilter_, PINDIR_INPUT, &pPinInVideoGrabber_);
+    if (FAILED(hr)) {
+        console.error(_T("Get grabber input pin failed. Error: 0x%x"), hr);
+        goto error_exit;
+    }
+
+    hr = pFilterGraph_->Connect(pPinOutVideoCapture_, pPinInVideoGrabber_);
+    if (FAILED(hr)) {
+        console.error(_T("Connect pin out capture and pin in grabber failed. Error: 0x%x"), hr);
+        goto error_exit;
+    }
+
+    return hr;
+
+error_exit:
+    SAFE_COM_RELEASE(pPinOutVideoCapture_);
+    SAFE_COM_RELEASE(pPinInVideoGrabber_);
+    return hr;
+}
+
+HRESULT CameraCapture::ConnectAudioFilter()
+{
+    return 0;
 }
 
 //
@@ -779,15 +899,13 @@ HRESULT CameraCapture::BuildPreviewGraph()
     if (captureGraphBuilt_)
         TearDownGraph();
 
-    // Reset video size
-    nVideoWidth_ = -1;
-    nVideoHeight_ = -1;
-
     if (pCaptureBuilder_) {
         if (wantCapture_) {
+#if 1
             hr = pCaptureBuilder_->RenderStream(&PIN_CATEGORY_PREVIEW,
                                                 &MEDIATYPE_Interleaved, pVideoFilter_,
                                                 pVideoGrabberFilter_, NULL);
+#endif
         }
         else {
             hr = pCaptureBuilder_->RenderStream(&PIN_CATEGORY_PREVIEW,
@@ -800,9 +918,11 @@ HRESULT CameraCapture::BuildPreviewGraph()
         else if (hr != S_OK) {
             // Maybe it's DV?
             if (wantCapture_) {
+#if 1
                 hr = pCaptureBuilder_->RenderStream(&PIN_CATEGORY_PREVIEW,
                                                     &MEDIATYPE_Video, pVideoFilter_,
                                                     pVideoGrabberFilter_, NULL);
+#endif
             }
             else {
                 hr = pCaptureBuilder_->RenderStream(&PIN_CATEGORY_PREVIEW,
@@ -813,7 +933,7 @@ HRESULT CameraCapture::BuildPreviewGraph()
                 isPreviewFaked_ = true;
             }
             else if (hr != S_OK) {
-                console.error(_T("This graph cannot preview!"));
+                console.error(_T("This graph cannot preview! Error: 0x%x"), hr);
                 previewGraphBuilt_ = false;
                 return S_FALSE;
             }
@@ -865,7 +985,7 @@ HRESULT CameraCapture::BuildPreviewGraph()
             SAFE_COM_RELEASE(pMediaControl_);
             hr = pFilterGraph_->QueryInterface(IID_IMediaControl, (void **)&pMediaControl_);
             if (FAILED(hr)) {
-                console.error(_T("Query IMediaControl interface failed. Error: %x"), hr);
+                console.error(_T("Query IMediaControl interface failed. Error: 0x%x"), hr);
                 //return hr;
             }
 
@@ -873,7 +993,7 @@ HRESULT CameraCapture::BuildPreviewGraph()
             SAFE_COM_RELEASE(pMediaEvent_);
             hr = pFilterGraph_->QueryInterface(IID_IMediaEventEx, (void **)&pMediaEvent_);
             if (FAILED(hr)) {
-                console.error(_T("Query IMediaEventEx interface failed. Error: %x"), hr);
+                console.error(_T("Query IMediaEventEx interface failed. Error: 0x%x"), hr);
                 //return hr;
             }
 
@@ -1168,7 +1288,7 @@ void CameraCapture::ReleaseDeviceFilter(IBaseFilter ** ppFilter)
 
 HRESULT CameraCapture::BindDeviceFilter(IBaseFilter ** ppDeviceFilter, IMoniker ** ppDeviceMoniker,
                                         int nIndex, IMoniker * pMoniker,
-                                        const TCHAR * inDeviceName, bool isVideo)
+                                        const TCHAR * inDeviceName, bool isVideo, bool & found)
 {
     assert(pMoniker != nullptr);
     assert(inDeviceName != nullptr);
@@ -1191,6 +1311,7 @@ HRESULT CameraCapture::BindDeviceFilter(IBaseFilter ** ppDeviceFilter, IMoniker 
             ::SysFreeString(var.bstrVal);
             hr = E_FAIL;
             if (inDeviceName != NULL && _tcscmp(inDeviceName, deviceName) == 0) {
+                found = true;
                 if (ppDeviceMoniker != nullptr) {
                     ULONG ref_cnt = pMoniker->AddRef();
                     *ppDeviceMoniker = pMoniker;
@@ -1199,11 +1320,12 @@ HRESULT CameraCapture::BindDeviceFilter(IBaseFilter ** ppDeviceFilter, IMoniker 
                     ReleaseDeviceFilter(ppDeviceFilter);
                     // 尝试用当前设备绑定到 device filter
                     hr = pMoniker->BindToObject(0, 0, IID_IBaseFilter, (void **)ppDeviceFilter);
-                    if (SUCCEEDED(hr) && ((ppDeviceFilter != NULL) && (*ppDeviceFilter != NULL))) {
+                    if (SUCCEEDED(hr) && (*ppDeviceFilter != NULL)) {
                         hr = S_OK;
                         if (pFilterGraph_ != nullptr) {
                             // 将 Device filter 加入 filter graph
                             IBaseFilter * pDeviceFilter = *ppDeviceFilter;
+                            console.info(_T("GetDeviceFilterName(isVideo) = %s"), GetDeviceFilterName(isVideo));
                             hr = pFilterGraph_->AddFilter(pDeviceFilter, GetDeviceFilterName(isVideo));
                             if (FAILED(hr)) {
                                 console.error(_T("Failed to add %s device filter to filter graph: %x"),
@@ -1253,8 +1375,8 @@ HRESULT CameraCapture::BindDeviceFilter(IBaseFilter ** ppDeviceFilter, IMoniker 
     }
 
     assert(ppDeviceMoniker != nullptr);
-    *ppDeviceMoniker = nullptr;
 
+    bool found = false;
     ULONG cFetched = 0;
     int nIndex = 0;
     IMoniker * pMoniker = NULL;
@@ -1276,9 +1398,12 @@ HRESULT CameraCapture::BindDeviceFilter(IBaseFilter ** ppDeviceFilter, IMoniker 
             break;
         }
         if (pMoniker != nullptr) {
-            hr = BindDeviceFilter(ppDeviceFilter, ppDeviceMoniker, nIndex, pMoniker, inDeviceName, isVideo);
-            pMoniker->Release();
+            hr = BindDeviceFilter(ppDeviceFilter, ppDeviceMoniker, nIndex,
+                                  pMoniker, inDeviceName, isVideo, found);
+            ULONG ref_cnt = pMoniker->Release();
             pMoniker = NULL;
+            if (found)
+                break;
         }
         nIndex++;
     }
@@ -1306,6 +1431,9 @@ HRESULT CameraCapture::BindVideoFilter(const TCHAR * videoDevice)
     if (videoDevice == NULL)
         return E_INVALIDARG;
 
+    RemoveDownstream(pVideoFilter_);
+    SAFE_COM_RELEASE(pVideoFilter_);
+    SAFE_COM_RELEASE(pVideoMoniker_);
     HRESULT hr = BindDeviceFilter(&pVideoFilter_, &pVideoMoniker_, videoDevice, true);
     return hr;
 }
@@ -1316,6 +1444,9 @@ HRESULT CameraCapture::BindAudioFilter(const TCHAR * audioDevice)
     if (audioDevice == NULL)
         return E_INVALIDARG;
 
+    RemoveDownstream(pAudioFilter_);
+    SAFE_COM_RELEASE(pAudioFilter_);
+    SAFE_COM_RELEASE(pAudioMoniker_);
     HRESULT hr = BindDeviceFilter(&pAudioFilter_, &pAudioMoniker_, audioDevice, false);
     return hr;
 }
@@ -1365,18 +1496,11 @@ HRESULT CameraCapture::StartPreview()
         if (pVideoSampleGrabber_ && pVideoCaptureCallback_) {
             hr = pVideoSampleGrabber_->SetCallback(pVideoCaptureCallback_, 1);
             if (FAILED(hr)) {
-                console.error(_T("Error: %x, video SampleGrabber set callback failed."), hr);
+                console.error(_T("Error: 0x%x, video SampleGrabber set callback failed."), hr);
                 return hr;
             }
         }
     }
-
-    hr = pCaptureBuilder_->RenderStream(&PIN_CATEGORY_PREVIEW,
-                                        &MEDIATYPE_Video, pVideoFilter_, NULL, NULL);
-
-    /******* 设置视频播放窗口 *******/
-    if (!AttachToVideoWindow(hwndPreview_))
-        return -1;
 
     // Run the filter graph
     if (pFilterGraph_) {
@@ -1405,14 +1529,14 @@ HRESULT CameraCapture::StopPreview()
     if (!isPreviewing_)
         return S_FALSE;
 
-    if (!captureGraphBuilt_)
+    if (!previewGraphBuilt_)
         return E_FAIL;
 
     if (wantCapture_) {
         if (pVideoSampleGrabber_ && pVideoCaptureCallback_) {
             hr = pVideoSampleGrabber_->SetCallback(NULL, 1);
             if (FAILED(hr)) {
-                console.error(_T("Error: %x, video SampleGrabber set callback to NULL failed."), hr);
+                console.error(_T("Error: 0x%x, video SampleGrabber set callback to NULL failed."), hr);
                 return hr;
             }
         }
@@ -1597,8 +1721,7 @@ bool CameraCapture::Render(int mode, TCHAR * videoPath,
     // 检查 Video filter graph (管理器)
     if (pFilterGraph_ == NULL)
         return false;
-
-#if 0
+#if 1
     if (mode != MODE_LOCAL_VIDEO) {
         // 创建 Video filter
         hr = BindVideoFilter(videoDevice);
@@ -1609,9 +1732,8 @@ bool CameraCapture::Render(int mode, TCHAR * videoPath,
         }
     }
 #endif
-
     if (mode == MODE_PREVIEW_VIDEO) {     // 预览视频
-        //hr = pCaptureBuilder_->RenderStream(&PIN_CATEGORY_PREVIEW, &MEDIATYPE_Video, pVideoFilter_, NULL, NULL);
+        hr = pCaptureBuilder_->RenderStream(&PIN_CATEGORY_PREVIEW, &MEDIATYPE_Video, pVideoFilter_, NULL, NULL);
         if (hr == VFW_S_NOPREVIEWPIN) {
             // preview was faked up for us using the (only) capture pin
         }

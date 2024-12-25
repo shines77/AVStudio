@@ -16,9 +16,16 @@
 #include <cstdio>
 #include <iostream>
 #include <fstream>
+#include <codecvt>
+#include <locale>
 #include <string>
 
 #include "utils.h"
+#include "string_utils.h"
+
+// std::ofstream 使用 Unicode (UTF-16E) 格式输出, 不推荐
+// 不定义该项，则转换为 Ansi (系统默认的 GBK) 格式输出.
+// #define USE_UTF16E_FILE_STREAM
 
 namespace av {
 
@@ -544,10 +551,17 @@ struct StdFileWriter : public BasicStreamWriter<CharType>
         int status = FileStatus::Unknown;
         if (!out_file_.is_open()) {
             if (onlyAppend)
-                out_file_.open(filename, std::ios::out | std::ios::app);
+                out_file_.open(filename, std::ios::out | std::ios::binary | std::ios::app);
             else
-                out_file_.open(filename, std::ios::out | std::ios::trunc);
+                out_file_.open(filename, std::ios::out | std::ios::binary | std::ios::trunc);
             if (out_file_.is_open()) {
+#ifdef USE_UTF16E_FILE_STREAM
+                // Setting file stream's locale to UTF-16
+                if (kIsWideChar) {
+                    out_file_.imbue(std::locale(std::locale(),
+                                    new std::codecvt_utf16<wchar_t, 0x10ffff, std::consume_header>));
+                }
+#endif
                 status = FileStatus::Succeeded;
             }
             else if (out_file_.rdstate() & std::ios::failbit) {
@@ -573,7 +587,11 @@ struct StdFileWriter : public BasicStreamWriter<CharType>
     }
 
     void write(const char_type * text) {
+#ifdef USE_UTF16E_FILE_STREAM
         out_file_ << text;
+#else
+        out_file_ << string_utils::unicode_to_ansi(text);
+#endif
     }
 
     void new_line() {
@@ -599,7 +617,11 @@ struct StdFileWriter : public BasicStreamWriter<CharType>
         return self;
     }
 
+#ifdef USE_UTF16E_FILE_STREAM
     std::basic_ofstream<char_type> out_file_;
+#else
+    std::ofstream out_file_;
+#endif
 };
 
 #if defined(_WIN32) || defined(_WIN64)

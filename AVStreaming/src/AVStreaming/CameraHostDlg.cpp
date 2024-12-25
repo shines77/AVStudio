@@ -100,8 +100,8 @@ BOOL CCameraHostDlg::OnInitDialog()
     UpdateData(FALSE);
 
     if (pCameraCapture_ != NULL) {
-        size_t nAudioCount = EnumAudioDeviceList();
         size_t nVideoCount = EnumVideoDeviceList();
+        size_t nAudioCount = EnumAudioDeviceList();
 
         size_t nVideoConfig = pCameraCapture_->EnumVideoConfigures();
         size_t nAudioConfig = pCameraCapture_->EnumAudioConfigures();
@@ -120,7 +120,7 @@ size_t CCameraHostDlg::EnumAudioDeviceList()
         nDeviceCount = pCameraCapture_->EnumAudioDevices();
         cbxAudioDeviceList_.Clear();
         if (nDeviceCount > 0) {
-            for (int i = 0; i < nDeviceCount; i++) {
+            for (size_t i = 0; i < nDeviceCount; i++) {
                 const std::tstring & deviceName = pCameraCapture_->audioDeviceList_[i];           
                 cbxAudioDeviceList_.AddString(deviceName.c_str());
             }
@@ -137,7 +137,7 @@ size_t CCameraHostDlg::EnumVideoDeviceList()
         nDeviceCount = pCameraCapture_->EnumVideoDevices();
         cbxVideoDeviceList_.Clear();
         if (nDeviceCount > 0) {
-            for (int i = 0; i < nDeviceCount; i++) {
+            for (size_t i = 0; i < nDeviceCount; i++) {
                 const std::tstring & deviceName = pCameraCapture_->videoDeviceList_[i];             
                 cbxVideoDeviceList_.AddString(deviceName.c_str());
             }
@@ -195,13 +195,13 @@ bool CCameraHostDlg::StartCapture()
         }
         else {
             pCameraCapture_->SetWantPreview(true);
-            pCameraCapture_->SetWantCapture(false);
+            pCameraCapture_->SetWantCapture(true);
 
             std::tstring videoDevice = GetSelectedVideoDevice();
             std::tstring audioDevice = GetSelectedAudioDevice();
             if (videoDevice != selectedVideoDevice_ && audioDevice != selectedAudioDevice_) {
                 // 选择视频和音频设备, 并开始预览画面
-#if 0
+#if 1
                 pCameraCapture_->CreateEnv();
                 pCameraCapture_->ChooseDevices(videoDevice.c_str(), audioDevice.c_str());
 #else
@@ -210,8 +210,9 @@ bool CCameraHostDlg::StartCapture()
                 pCameraCapture_->BindAudioFilter(audioDevice.c_str());
                 pCameraCapture_->InitCaptureFilters();
                 pCameraCapture_->BuildPreviewGraph();
-                bool result = pCameraCapture_->Render(MODE_PREVIEW_VIDEO, NULL,
-                                                      videoDevice.c_str(), audioDevice.c_str());
+                pCameraCapture_->StartPreview();
+                //bool result = pCameraCapture_->Render(MODE_PREVIEW_VIDEO, NULL,
+                //                                      videoDevice.c_str(), audioDevice.c_str());
 #endif
                 if (videoDevice != selectedVideoDevice_)
                     selectedVideoDevice_ = videoDevice;

@@ -155,6 +155,9 @@ public:
     HRESULT InitVideoSampleGrabber();
     HRESULT InitAudioSampleGrabber();
 
+    HRESULT ConnectVideoFilter();
+    HRESULT ConnectAudioFilter();
+
     HRESULT BuildPreviewGraph();
 
     HWND GetPreviewHwnd() const {
@@ -256,7 +259,7 @@ protected:
 
     HRESULT BindDeviceFilter(IBaseFilter ** ppDeviceFilter, IMoniker ** ppDeviceMoniker,
                              int nIndex, IMoniker * pMoniker,
-                             const TCHAR * inDeviceName, bool isVideo);
+                             const TCHAR * inDeviceName, bool isVideo, bool & found);
     HRESULT BindDeviceFilter(IBaseFilter ** ppDeviceFilter, IMoniker ** ppDeviceMoniker,
                              const TCHAR * inDeviceName, bool isVideo);
     void ReleaseDeviceFilter(IBaseFilter ** ppFilter);
@@ -291,6 +294,9 @@ private:
 
     ISampleGrabber *        pVideoSampleGrabber_;   // 视频抓取回调
     ISampleGrabber *        pAudioSampleGrabber_;   // 音频抓取回调
+
+    IPin *                  pPinOutVideoCapture_;
+    IPin *                  pPinInVideoGrabber_;
 
     VideoCaptureCB *        pVideoCaptureCallback_;
     AudioCaptureCB *        pAudioCaptureCallback_;
