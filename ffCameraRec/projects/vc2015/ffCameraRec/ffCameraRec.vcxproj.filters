@@ -30,6 +30,12 @@
     <ClCompile Include="..\..\..\src\ffCameraRec\DShowDevice.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\src\ffCameraRec\swr_audio.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\src\ffCameraRec\sws_video.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\src\ffCameraRec\AVConsole.h">
@@ -63,6 +69,15 @@
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\src\ffCameraRec\macros.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\ffCameraRec\av_time_stamp.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\ffCameraRec\swr_audio.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\src\ffCameraRec\sws_video.h">
       <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>

@@ -1,9 +1,11 @@
 #pragma once
 
+#include "macros.h"
+
 #include <stdexcept>
 #include <type_traits>
 
-template <typename T, std::size_t Id = 0>
+template <typename T, std::size_t Type = 0>
 struct fAllocator
 {
     typedef typename std::remove_const<T>::type value_type;
@@ -11,19 +13,19 @@ struct fAllocator
 
     void _free(point_type ptr) {
         // Do nothing!
-        UNUSED_ALWAYS(ptr);
+        UNUSED_VAR(ptr);
     }
 };
 
-template <typename T, std::size_t Id = 0>
+template <typename T, std::size_t Type = 0>
 class fRefCount
 {
 public:
     typedef typename std::remove_const<T>::type value_type;
     typedef value_type *                        point_type;
     typedef value_type &                        reference_type;
-    typedef fAllocator<T, Id>                   allocator_t;
-    typedef fRefCount<T, Id>                    this_type;
+    typedef fAllocator<T, Type>                 allocator_t;
+    typedef fRefCount<T, Type>                  this_type;
 
     typedef intptr_t counter_t;
 
@@ -81,16 +83,16 @@ struct is_dual_pointer<T *>
     static constexpr bool value = true;
 };
 
-template <typename T, std::size_t Id = 0>
+template <typename T, std::size_t Type = 0>
 class fSmartPtr
 {
 public:
-    typedef fRefCount<T, Id>                    manager_t;
+    typedef fRefCount<T, Type>                  manager_t;
     typedef typename manager_t::value_type      value_type;
     typedef typename manager_t::point_type      point_type;
     typedef typename manager_t::reference_type  reference_type;
     typedef typename manager_t::counter_t       counter_t;
-    typedef fSmartPtr<T, Id>                    this_type;
+    typedef fSmartPtr<T, Type>                  this_type;
 
     static constexpr bool kIsDualPointer = is_dual_pointer<T>::value;
 

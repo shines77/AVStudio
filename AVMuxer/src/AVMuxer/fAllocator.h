@@ -16,6 +16,10 @@ enum SmartPtr_Type {
     SMT_Output,
     SMT_Decoder,
     SMT_Encoder,
+    SMT_Muxer,
+    SMT_Demuxer,
+    SMT_Filter,
+    SMT_BSFS,
     SMT_Video,
     SMT_Audio,
     SMT_Last
@@ -77,6 +81,18 @@ struct fAllocator<AVPacket>
     inline void _free(AVPacket * ptr) {
         if (ptr) {
             av_packet_unref(ptr);
+        }
+    }
+};
+
+/* AVDictionary */
+
+template <>
+struct fAllocator<AVDictionary>
+{
+    inline void _free(AVDictionary * ptr) {
+        if (ptr) {
+            av_dict_free(&ptr);
         }
     }
 };

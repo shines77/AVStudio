@@ -117,7 +117,7 @@ int ffMuxer::create_from_in_stream(AVFormatContext * av_ofmt_ctx, AVStream ** pp
             console.error("Failed allocating output %s stream", get_stream_type(is_video));
             ret = AVERROR_UNKNOWN;
             break;
-        }     
+        }
 
         // Copy the settings of AVCodecContext
         ret = avcodec_parameters_copy(out_stream->codecpar, in_stream->codecpar);
